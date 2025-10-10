@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>hello_universe</title>
+		<title>%s</title>
 		<style>
 			*,
 			*::before,
@@ -30,7 +30,6 @@
 				border: medium solid blue;
 				border-radius: 0.3125em;
 			}
-
 			a,
 			a:hover,
 			a:visited,
@@ -44,13 +43,6 @@
 		<script>
 			const API_URL = '%s';
 			const nav = { prev: 0, next: 0 };
-
-			if (API_URL) {
-				console.log('API URL:', API_URL);
-			} else {
-				console.log('No API URL');
-			}
-
 			function loadFrame(frameIndex) {
 				fetch(API_URL, { headers: { Y: frameIndex } })
 					.then((response) => {
@@ -63,7 +55,6 @@
 					})
 					.catch(console.error);
 			}
-
 			document.addEventListener('keydown', (event) => {
 				switch (event.key.toLowerCase()) {
 					case 'e':
@@ -74,7 +65,6 @@
 						break;
 				}
 			});
-
 			document.addEventListener('DOMContentLoaded', () => {
 				loadFrame(0);
 			});

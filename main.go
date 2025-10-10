@@ -13,11 +13,15 @@ var zero string
 var one []byte
 
 func init() {
+	title := os.Getenv("TITLE")
+	if title == "" {
+		title = "hello_universe"
+	}
 	apiURL := os.Getenv("API_URL")
 	if apiURL != "" && !strings.HasPrefix(apiURL, "http://") && !strings.HasPrefix(apiURL, "https://") {
 		apiURL = "https://" + apiURL
 	}
-	one = fmt.Appendf(nil, zero, apiURL)
+	one = fmt.Appendf(nil, zero, title, apiURL)
 }
 
 func Pathless(w http.ResponseWriter, r *http.Request) {
