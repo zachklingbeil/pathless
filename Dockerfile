@@ -1,6 +1,6 @@
-# Build
+# Build stage
 FROM --platform=$BUILDPLATFORM golang:latest AS go_builder
-WORKDIR /pathless
+WORKDIR /app
 
 # Cache dependencies
 RUN --mount=type=cache,target=/go/pkg/mod/ \
@@ -10,30 +10,13 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
 
 ARG TARGETARCH
 
-# Build
+# Build static binary
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=bind,target=. \
-    CGO_ENABLED=0 GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /bin/pathless .
+    CGO_ENABLED=0 GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /app/pathless .
 
-# Run
-FROM alpine:latest AS final
-RUN apk --update add \
-    ca-certificates \
-    tzdata \
-    && \
-    update-ca-certificates
-
-ARG UID=10001
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/nonexistent" \
-    --shell "/sbin/nologin" \
-    --no-create-home \
-    --uid "${UID}" \
-    appuser
-USER appuser
-
-COPY --from=go_builder /bin/pathless /bin/
-
-ENTRYPOINT [ "/bin/pathless" ]
+# Final stage
+FROM scratch
+COPY --from=go_builder /app/pathless /pathless
+USER 10001
+ENTRYPOINT ["/pathless"]
