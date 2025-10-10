@@ -22,14 +22,61 @@
 			}
 			body {
 				color: #f1f1f1;
-				background-color: black;
+				background-color: #000000;
 				height: 100vh;
+				width: 100vw;
 				font-family: 'Roboto', sans-serif;
 				overflow: hidden;
-				display: flex;
+				position: relative;
 				border: medium solid blue;
 				border-radius: 0.3125em;
 			}
+
+			#frame {
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				display: flex;
+				overflow: hidden;
+			}
+
+			.content-frame {
+				position: relative;
+				overflow: auto;
+				display: flex;
+				flex-direction: column;
+				transition: opacity 0.2s ease;
+				padding: 20px;
+				flex: 1;
+			}
+
+			.content-frame.hidden {
+				display: none;
+			}
+
+			/* Horizontal split */
+			.layout-horizontal {
+				flex-direction: row;
+			}
+
+			/* Vertical split */
+			.layout-vertical {
+				flex-direction: column;
+			}
+
+			/* Focus states */
+			.content-frame.focused {
+				outline: 2px solid #00ff00;
+				outline-offset: -2px;
+				z-index: 10;
+			}
+
+			.content-frame:not(.focused) {
+				opacity: 0.6;
+			}
+
 			a,
 			a:hover,
 			a:visited,
@@ -43,30 +90,174 @@
 		<script>
 			const API_URL = '%s';
 			const nav = { prev: 0, next: 0 };
+
+			if (API_URL) {
+				console.log('API URL:', API_URL);
+			} else {
+				console.log('No API URL');
+			}
+
+			const FrameManager = {
+				frames: [],
+				focusedIndex: 0,
+				layout: 'single',
+				lastSplitLayout: 'horizontal',
+
+				init: function () {
+					const container = document.getElementById('frame');
+
+					// Create both frames from the start
+					for (var i = 0; i < 2; i++) {
+						var frame = document.createElement('div');
+						frame.className = 'content-frame';
+						frame.innerHTML =
+							'<div style="margin: auto; text-align: center;"><h2>Frame ' +
+							(i + 1) +
+							'</h2><p>Press Q/E to load content (when API available)</p></div>';
+						container.appendChild(frame);
+						this.frames.push(frame);
+					}
+
+					// Hide frame 2 by default (single view)
+					this.frames[1].classList.add('hidden');
+					this.focusFrame(0);
+				},
+
+				setLayout: function (layout) {
+					if (layout === 'horizontal' || layout === 'vertical') {
+						this.lastSplitLayout = layout;
+					}
+
+					this.layout = layout;
+					var container = document.getElementById('frame');
+					container.className = 'layout-' + layout;
+
+					if (layout === 'single') {
+						// Hide the non-focused frame
+						for (var i = 0; i < this.frames.length; i++) {
+							if (i === this.focusedIndex) {
+								this.frames[i].classList.remove('hidden');
+							} else {
+								this.frames[i].classList.add('hidden');
+							}
+						}
+					} else {
+						// Show both frames
+						this.frames[0].classList.remove('hidden');
+						this.frames[1].classList.remove('hidden');
+					}
+
+					this.focusFrame(this.focusedIndex);
+				},
+
+				toggleSplit: function () {
+					if (this.layout === 'single') {
+						this.setLayout(this.lastSplitLayout);
+					} else {
+						var newLayout =
+							this.layout === 'horizontal'
+								? 'vertical'
+								: 'horizontal';
+						this.setLayout(newLayout);
+					}
+				},
+
+				focusFrame: function (index) {
+					if (index < 0 || index >= this.frames.length) return;
+					for (var i = 0; i < this.frames.length; i++) {
+						if (i === index) {
+							this.frames[i].classList.add('focused');
+						} else {
+							this.frames[i].classList.remove('focused');
+						}
+					}
+					this.focusedIndex = index;
+				},
+
+				loadIntoFocused: function (content) {
+					if (this.frames[this.focusedIndex]) {
+						this.frames[this.focusedIndex].innerHTML = content;
+					}
+				},
+
+				focusNext: function () {
+					if (this.layout === 'single') return;
+					var next = this.focusedIndex + 1;
+					if (next >= this.frames.length) {
+						this.focusedIndex = 0;
+					} else {
+						this.focusedIndex = next;
+					}
+					this.focusFrame(this.focusedIndex);
+				},
+
+				focusPrev: function () {
+					if (this.layout === 'single') return;
+					var prev = this.focusedIndex - 1;
+					if (prev < 0) {
+						this.focusedIndex = this.frames.length - 1;
+					} else {
+						this.focusedIndex = prev;
+					}
+					this.focusFrame(this.focusedIndex);
+				},
+			};
+
 			function loadFrame(frameIndex) {
+				if (!API_URL) {
+					console.log('No API URL configured');
+					return;
+				}
+
 				fetch(API_URL, { headers: { Y: frameIndex } })
-					.then((response) => {
+					.then(function (response) {
 						nav.prev = parseInt(response.headers.get('X'));
 						nav.next = parseInt(response.headers.get('Z'));
 						return response.text();
 					})
-					.then((html) => {
-						document.getElementById('frame').innerHTML = html;
+					.then(function (html) {
+						FrameManager.loadIntoFocused(html);
 					})
-					.catch(console.error);
+					.catch(function (err) {
+						console.error('API Error:', err);
+					});
 			}
-			document.addEventListener('keydown', (event) => {
-				switch (event.key.toLowerCase()) {
-					case 'e':
-						loadFrame(nav.next);
-						break;
-					case 'q':
-						loadFrame(nav.prev);
-						break;
+
+			document.addEventListener('keydown', function (event) {
+				if (event.target.matches('input, textarea')) return;
+
+				var key = event.key.toLowerCase();
+
+				if (key === 'e') {
+					loadFrame(nav.next);
+				} else if (key === 'q') {
+					loadFrame(nav.prev);
+				} else if (key === 'tab') {
+					event.preventDefault();
+					if (event.shiftKey) {
+						FrameManager.focusPrev();
+					} else {
+						FrameManager.focusNext();
+					}
+				} else if (key === '1') {
+					FrameManager.setLayout('single');
+				} else if (key === '2') {
+					FrameManager.toggleSplit();
 				}
 			});
-			document.addEventListener('DOMContentLoaded', () => {
-				loadFrame(0);
+
+			document.addEventListener('DOMContentLoaded', function () {
+				FrameManager.init();
+				if (API_URL) {
+					loadFrame(0);
+				}
+				console.log('Keyboard shortcuts:');
+				console.log('  Q/E: Navigate prev/next (requires API)');
+				console.log(
+					'  Tab/Shift+Tab: Switch focused frame (in split view)'
+				);
+				console.log('  1: Make focused frame fullscreen');
+				console.log('  2: Toggle split (horizontal/vertical)');
 			});
 		</script>
 	</head>
