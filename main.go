@@ -2,30 +2,20 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"os"
+	"strings"
 )
 
 var pathless []byte
 
 func main() {
-	socketPath := "/tmp/pathless.sock"
-	os.Remove(socketPath)
-
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		panic(err)
-	}
-	defer listener.Close()
-
-	os.Chmod(socketPath, 0666)
-	http.HandleFunc("/", one)
-	http.Serve(listener, nil)
+	http.HandleFunc("/", Pathless)
+	http.ListenAndServe(":1001", nil)
 }
 
-// Redirect anything that's not exactly "/" to "/"
-func one(w http.ResponseWriter, r *http.Request) {
+func Pathless(w http.ResponseWriter, r *http.Request) {
+	// Redirect anything that's not exactly "/" to "/"
 	if r.URL.Path != "/" || r.URL.RawQuery != "" {
 		http.Redirect(w, r, "/", http.StatusMovedPermanently)
 		return
@@ -36,9 +26,10 @@ func one(w http.ResponseWriter, r *http.Request) {
 
 func init() {
 	apiURL := os.Getenv("API_URL")
-	apiURL = "https://" + apiURL
-
-	pathless = []byte(fmt.Sprintf(`<!DOCTYPE html>
+	if apiURL != "" && !strings.HasPrefix(apiURL, "http") {
+		apiURL = "https://" + apiURL
+	}
+	pathless = fmt.Appendf(nil, `<!DOCTYPE html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -117,5 +108,5 @@ func init() {
 	<body>
 		<div id="frame"></div>
 	</body>
-</html>`, apiURL))
+</html>`, apiURL)
 }
