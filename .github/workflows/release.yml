@@ -12,6 +12,8 @@ jobs:
             contents: write
         steps:
             - uses: actions/checkout@v4
+              with:
+                  fetch-tags: true
 
             - name: Get latest tag and bump version
               id: bump_version
