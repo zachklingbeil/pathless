@@ -22,61 +22,18 @@
 			}
 			body {
 				color: #f1f1f1;
-				background-color: #000000;
+				background-color: black;
 				height: 100vh;
-				width: 100vw;
 				font-family: 'Roboto', sans-serif;
 				overflow: hidden;
-				position: relative;
+				display: flex;
+				flex-direction: row;
 				border: medium solid blue;
 				border-radius: 0.3125em;
 			}
-
-			#frame {
-				position: absolute;
-				top: 0;
-				left: 0;
-				right: 0;
-				bottom: 0;
-				display: flex;
-				overflow: hidden;
-			}
-
-			.content-frame {
-				position: relative;
-				overflow: auto;
-				display: flex;
-				flex-direction: column;
-				transition: opacity 0.2s ease;
-				padding: 20px;
-				flex: 1;
-			}
-
-			.content-frame.hidden {
-				display: none;
-			}
-
-			/* Horizontal split */
-			.layout-horizontal {
-				flex-direction: row;
-			}
-
-			/* Vertical split */
-			.layout-vertical {
+			body.horizontal {
 				flex-direction: column;
 			}
-
-			/* Focus states */
-			.content-frame.focused {
-				outline: 2px solid #00ff00;
-				outline-offset: -2px;
-				z-index: 10;
-			}
-
-			.content-frame:not(.focused) {
-				opacity: 0.6;
-			}
-
 			a,
 			a:hover,
 			a:visited,
@@ -86,182 +43,166 @@
 				color: inherit;
 				text-decoration: underline;
 			}
+			.split {
+				flex: 1;
+				overflow: hidden;
+			}
+			#split0 {
+				border-right: medium solid blue;
+			}
+			body.horizontal #split0 {
+				border-right: none;
+				border-bottom: medium solid blue;
+			}
+			body.layout-1 #split0 {
+				border: none;
+			}
+			body.layout-1 #split1,
+			body.layout-1 #split2,
+			body.layout-1 .right-container,
+			body.layout-2 #split2 {
+				display: none;
+			}
+			.right-container {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+			}
+			body.layout-2 .right-container {
+				display: contents;
+			}
+			body.horizontal .right-container {
+				flex-direction: row;
+			}
+			#split1 {
+				border-bottom: medium solid blue;
+			}
+			body.horizontal #split1 {
+				border-bottom: none;
+				border-right: medium solid blue;
+			}
+			body.layout-2 #split1 {
+				border: none;
+			}
 		</style>
 		<script>
 			const API_URL = '%s';
-			const nav = { prev: 0, next: 0 };
-
-			if (API_URL) {
-				console.log('API URL:', API_URL);
-			} else {
-				console.log('No API URL');
-			}
-
-			const FrameManager = {
-				frames: [],
-				focusedIndex: 0,
-				layout: 'single',
-				lastSplitLayout: 'horizontal',
-
-				init: function () {
-					const container = document.getElementById('frame');
-
-					// Create both frames from the start
-					for (var i = 0; i < 2; i++) {
-						var frame = document.createElement('div');
-						frame.className = 'content-frame';
-						frame.innerHTML =
-							'<div style="margin: auto; text-align: center;"><h2>Frame ' +
-							(i + 1) +
-							'</h2><p>Press Q/E to load content (when API available)</p></div>';
-						container.appendChild(frame);
-						this.frames.push(frame);
-					}
-
-					// Hide frame 2 by default (single view)
-					this.frames[1].classList.add('hidden');
-					this.focusFrame(0);
-				},
-
-				setLayout: function (layout) {
-					if (layout === 'horizontal' || layout === 'vertical') {
-						this.lastSplitLayout = layout;
-					}
-
-					this.layout = layout;
-					var container = document.getElementById('frame');
-					container.className = 'layout-' + layout;
-
-					if (layout === 'single') {
-						// Hide the non-focused frame
-						for (var i = 0; i < this.frames.length; i++) {
-							if (i === this.focusedIndex) {
-								this.frames[i].classList.remove('hidden');
-							} else {
-								this.frames[i].classList.add('hidden');
-							}
-						}
-					} else {
-						// Show both frames
-						this.frames[0].classList.remove('hidden');
-						this.frames[1].classList.remove('hidden');
-					}
-
-					this.focusFrame(this.focusedIndex);
-				},
-
-				toggleSplit: function () {
-					if (this.layout === 'single') {
-						this.setLayout(this.lastSplitLayout);
-					} else {
-						var newLayout =
-							this.layout === 'horizontal'
-								? 'vertical'
-								: 'horizontal';
-						this.setLayout(newLayout);
-					}
-				},
-
-				focusFrame: function (index) {
-					if (index < 0 || index >= this.frames.length) return;
-					for (var i = 0; i < this.frames.length; i++) {
-						if (i === index) {
-							this.frames[i].classList.add('focused');
-						} else {
-							this.frames[i].classList.remove('focused');
-						}
-					}
-					this.focusedIndex = index;
-				},
-
-				loadIntoFocused: function (content) {
-					if (this.frames[this.focusedIndex]) {
-						this.frames[this.focusedIndex].innerHTML = content;
-					}
-				},
-
-				focusNext: function () {
-					if (this.layout === 'single') return;
-					var next = this.focusedIndex + 1;
-					if (next >= this.frames.length) {
-						this.focusedIndex = 0;
-					} else {
-						this.focusedIndex = next;
-					}
-					this.focusFrame(this.focusedIndex);
-				},
-
-				focusPrev: function () {
-					if (this.layout === 'single') return;
-					var prev = this.focusedIndex - 1;
-					if (prev < 0) {
-						this.focusedIndex = this.frames.length - 1;
-					} else {
-						this.focusedIndex = prev;
-					}
-					this.focusFrame(this.focusedIndex);
-				},
+			const state = {
+				frames: Array(3)
+					.fill(null)
+					.map(() => ({ content: '', nav: { prev: 0, next: 0 } })),
+				mapping: [0, 1, 2],
+				focusedSplit: 0,
+				layoutMode: 1,
+				lastSwap: null,
 			};
 
-			function loadFrame(frameIndex) {
-				if (!API_URL) {
-					console.log('No API URL configured');
-					return;
-				}
+			const render = () => {
+				['split0', 'split1', 'split2'].forEach((id, i) => {
+					document.getElementById(id).innerHTML =
+						state.frames[state.mapping[i]].content;
+				});
+			};
 
-				fetch(API_URL, { headers: { Y: frameIndex } })
-					.then(function (response) {
-						nav.prev = parseInt(response.headers.get('X'));
-						nav.next = parseInt(response.headers.get('Z'));
-						return response.text();
+			const loadFrame = (frameIndex, contentIndex) => {
+				fetch(API_URL, { headers: { Y: contentIndex } })
+					.then((res) => {
+						state.frames[frameIndex].nav.prev = parseInt(
+							res.headers.get('X')
+						);
+						state.frames[frameIndex].nav.next = parseInt(
+							res.headers.get('Z')
+						);
+						return res.text();
 					})
-					.then(function (html) {
-						FrameManager.loadIntoFocused(html);
+					.then((html) => {
+						state.frames[frameIndex].content = html;
+						render();
 					})
-					.catch(function (err) {
-						console.error('API Error:', err);
-					});
-			}
+					.catch(console.error);
+			};
 
-			document.addEventListener('keydown', function (event) {
-				if (event.target.matches('input, textarea')) return;
+			const setLayout = (mode) => {
+				const wasHorizontal =
+					document.body.classList.contains('horizontal');
+				state.layoutMode = mode;
+				document.body.className = `layout-${mode}`;
+				if (wasHorizontal && mode > 1)
+					document.body.classList.add('horizontal');
+				state.focusedSplit = Math.min(state.focusedSplit, mode - 1);
+				state.lastSwap = null;
+			};
 
-				var key = event.key.toLowerCase();
+			const swapContent = () => {
+				if (state.layoutMode === 1) return;
 
-				if (key === 'e') {
-					loadFrame(nav.next);
-				} else if (key === 'q') {
-					loadFrame(nav.prev);
-				} else if (key === 'tab') {
-					event.preventDefault();
-					if (event.shiftKey) {
-						FrameManager.focusPrev();
+				const { mapping, focusedSplit, layoutMode } = state;
+
+				if (layoutMode === 2) {
+					[mapping[0], mapping[1]] = [mapping[1], mapping[0]];
+				} else {
+					if (focusedSplit === 0) {
+						if (state.lastSwap !== null) {
+							[mapping[0], mapping[state.lastSwap]] = [
+								mapping[state.lastSwap],
+								mapping[0],
+							];
+							state.lastSwap = null;
+						}
 					} else {
-						FrameManager.focusNext();
+						[mapping[0], mapping[focusedSplit]] = [
+							mapping[focusedSplit],
+							mapping[0],
+						];
+						state.lastSwap = focusedSplit;
 					}
-				} else if (key === '1') {
-					FrameManager.setLayout('single');
-				} else if (key === '2') {
-					FrameManager.toggleSplit();
 				}
+				render();
+			};
+
+			const keyActions = {
+				e: () =>
+					loadFrame(
+						state.mapping[state.focusedSplit],
+						state.frames[state.mapping[state.focusedSplit]].nav.next
+					),
+				q: () =>
+					loadFrame(
+						state.mapping[state.focusedSplit],
+						state.frames[state.mapping[state.focusedSplit]].nav.prev
+					),
+				tab: (e) => {
+					if (state.layoutMode > 1) {
+						e.preventDefault();
+						state.focusedSplit =
+							(state.focusedSplit + 1) % state.layoutMode;
+					}
+				},
+				1: () => setLayout(1),
+				2: () => setLayout(2),
+				3: () => setLayout(3),
+				s: swapContent,
+				o: () =>
+					state.layoutMode > 1 &&
+					document.body.classList.toggle('horizontal'),
+			};
+
+			document.addEventListener('keydown', (e) => {
+				const action = keyActions[e.key.toLowerCase()];
+				if (action) action(e);
 			});
 
-			document.addEventListener('DOMContentLoaded', function () {
-				FrameManager.init();
-				if (API_URL) {
-					loadFrame(0);
-				}
-				console.log('Keyboard shortcuts:');
-				console.log('  Q/E: Navigate prev/next (requires API)');
-				console.log(
-					'  Tab/Shift+Tab: Switch focused frame (in split view)'
-				);
-				console.log('  1: Make focused frame fullscreen');
-				console.log('  2: Toggle split (horizontal/vertical)');
+			document.addEventListener('DOMContentLoaded', () => {
+				document.body.className = `layout-${state.layoutMode}`;
+				state.frames.forEach((_, i) => loadFrame(i, 0));
 			});
 		</script>
 	</head>
 	<body>
-		<div id="frame"></div>
+		<div id="split0" class="split"></div>
+		<div class="right-container">
+			<div id="split1" class="split"></div>
+			<div id="split2" class="split"></div>
+		</div>
 	</body>
 </html>
