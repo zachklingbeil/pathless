@@ -25,7 +25,14 @@ jobs:
                       new_version="1.01"
                   else
                       minor=$(echo "$latest_tag" | cut -d. -f2)
-                      new_version="1.$((minor + 1))"
+                      # Strip leading zeros and increment as base-10
+                      next_minor=$((10#$minor + 1))
+                      # Pad with leading zero if less than 10
+                      if [ $next_minor -lt 10 ]; then
+                          new_version="1.0${next_minor}"
+                      else
+                          new_version="1.${next_minor}"
+                      fi
                   fi
 
                   echo "Previous: ${latest_tag:-none} → New: $new_version"
