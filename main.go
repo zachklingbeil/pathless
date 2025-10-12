@@ -2,7 +2,7 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"strings"
@@ -21,7 +21,20 @@ func init() {
 	if apiURL != "" && !strings.HasPrefix(apiURL, "http://") && !strings.HasPrefix(apiURL, "https://") {
 		apiURL = "https://" + apiURL
 	}
-	one = fmt.Appendf(nil, zero, title, apiURL)
+
+	tmpl, err := template.New("page").Parse(zero)
+	if err != nil {
+		panic("template parse error: " + err.Error())
+	}
+
+	var b strings.Builder
+	if err := tmpl.Execute(&b, map[string]string{
+		"Title":  title,
+		"APIURL": apiURL,
+	}); err != nil {
+		panic("template execute error: " + err.Error())
+	}
+	one = []byte(b.String())
 }
 
 func Pathless(w http.ResponseWriter, r *http.Request) {

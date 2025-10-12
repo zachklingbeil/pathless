@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>%s</title>
+		<title>{{.Title}}</title>
 		<style>
 			*,
 			*::before,
@@ -86,7 +86,7 @@
 			}
 		</style>
 		<script>
-			const API_URL = '%s';
+			const API_URL = '{{.APIURL}}';
 			const state = {
 				frames: Array(3)
 					.fill(null)
