@@ -47,41 +47,41 @@
 				flex: 1;
 				overflow: hidden;
 			}
-			#split0 {
+			#zero {
 				border-right: medium solid blue;
 			}
-			body.horizontal #split0 {
+			body.horizontal #zero {
 				border-right: none;
 				border-bottom: medium solid blue;
 			}
-			body.layout-1 #split0 {
+			body.layout-1 #zero {
 				border: none;
 			}
-			body.layout-1 #split1,
-			body.layout-1 #split2,
-			body.layout-1 .right-container,
-			body.layout-2 #split2 {
+			body.layout-1 #one,
+			body.layout-1 #two,
+			body.layout-1 .half,
+			body.layout-2 #two {
 				display: none;
 			}
-			.right-container {
+			.half {
 				flex: 1;
 				display: flex;
 				flex-direction: column;
 			}
-			body.layout-2 .right-container {
+			body.layout-2 .half {
 				display: contents;
 			}
-			body.horizontal .right-container {
+			body.horizontal .half {
 				flex-direction: row;
 			}
-			#split1 {
+			#one {
 				border-bottom: medium solid blue;
 			}
-			body.horizontal #split1 {
+			body.horizontal #one {
 				border-bottom: none;
 				border-right: medium solid blue;
 			}
-			body.layout-2 #split1 {
+			body.layout-2 #one {
 				border: none;
 			}
 		</style>
@@ -98,7 +98,7 @@
 			};
 
 			const render = () => {
-				['split0', 'split1', 'split2'].forEach((id, i) => {
+				['zero', 'one', 'two'].forEach((id, i) => {
 					document.getElementById(id).innerHTML =
 						state.frames[state.mapping[i]].content;
 				});
@@ -199,10 +199,10 @@
 		</script>
 	</head>
 	<body>
-		<div id="split0" class="split"></div>
-		<div class="right-container">
-			<div id="split1" class="split"></div>
-			<div id="split2" class="split"></div>
+		<div id="zero" class="split"></div>
+		<div class="half">
+			<div id="one" class="split"></div>
+			<div id="two" class="split"></div>
 		</div>
 	</body>
 </html>
