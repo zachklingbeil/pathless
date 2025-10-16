@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Viewport Layouts</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			html,
+			body {
+				height: 100vh;
+				overflow: hidden;
+			}
+
+			body {
+				font-family: system-ui, -apple-system, sans-serif;
+				background: black;
+				border: 3px solid blue;
+			}
+
+			#container {
+				height: 100vh;
+				display: grid;
+				background: black;
+			}
+
+			.section {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 2rem;
+				color: white;
+				background: black;
+				position: relative;
+			}
+
+			.section::before {
+				content: '';
+				position: absolute;
+				inset: 0;
+				border: 3px solid white;
+				opacity: 0;
+				transition: opacity 0.3s;
+				pointer-events: none;
+			}
+
+			.section.focused::before {
+				opacity: 1;
+			}
+
+			/* Grid templates */
+			.single {
+				grid-template: 1fr / 1fr;
+			}
+
+			.halves {
+				grid-template: 1fr / 1fr 1fr;
+			}
+
+			.halves.vertical {
+				grid-template: 1fr 1fr / 1fr;
+			}
+
+			.split {
+				grid-template: 1fr 1fr / 1fr 1fr;
+			}
+
+			/* Section visibility */
+			.single #s2,
+			.single #s3,
+			.halves #s3 {
+				display: none;
+			}
+
+			/* Horizontal dividers (right borders) */
+			.halves #s1,
+			.split #s1 {
+				border-right: 3px solid blue;
+			}
+
+			/* Vertical dividers (bottom borders) */
+			.halves.vertical #s1,
+			.split #s2,
+			.split.vertical #s1 {
+				border-bottom: 3px solid blue;
+			}
+
+			/* Grid positioning */
+			.split #s1 {
+				grid-row: 1 / 3;
+			}
+
+			.split.vertical #s1 {
+				grid-row: 1;
+				grid-column: 1 / 3;
+			}
+
+			/* Border overrides for vertical layouts */
+			.halves.vertical #s1,
+			.split.vertical #s1 {
+				border-right: none;
+			}
+
+			.split.vertical #s2 {
+				border-bottom: none;
+				border-right: 3px solid blue;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="container" class="single">
+			<div id="s1" class="section"></div>
+			<div id="s2" class="section"></div>
+			<div id="s3" class="section"></div>
+		</div>
+
+		<script>
+			const container = document.getElementById('container');
+			const states = [
+				{ content: 'State 1' },
+				{ content: 'State 2' },
+				{ content: 'State 3' },
+			];
+			let focusedIndex = 0;
+			let hasCycled = false;
+			let focusTimeout;
+
+			const layouts = { 1: 'single', 2: 'halves', 3: 'split' };
+
+			function updateDisplay() {
+				states.forEach((state, i) => {
+					document.getElementById(`s${i + 1}`).textContent =
+						state.content;
+				});
+			}
+
+			function updateFocusIndicator() {
+				const layout = getLayout();
+				if (layout === 'single' || !hasCycled) {
+					// Clear all focus indicators
+					document
+						.querySelectorAll('.section')
+						.forEach((s) => s.classList.remove('focused'));
+					return;
+				}
+
+				states.forEach((state, i) => {
+					const section = document.getElementById(`s${i + 1}`);
+					section.classList.toggle('focused', i === focusedIndex);
+				});
+
+				// Auto-hide after 1 second
+				clearTimeout(focusTimeout);
+				focusTimeout = setTimeout(() => {
+					document
+						.querySelectorAll('.section')
+						.forEach((s) => s.classList.remove('focused'));
+				}, 1000);
+			}
+
+			function getLayout() {
+				return container.className.replace(' vertical', '');
+			}
+
+			function setLayout(layout) {
+				const current = getLayout();
+				const isVertical = container.classList.contains('vertical');
+
+				// Swap focused state to position 0 when going to single
+				if (
+					layout === 'single' &&
+					current !== 'single' &&
+					focusedIndex !== 0
+				) {
+					[states[0], states[focusedIndex]] = [
+						states[focusedIndex],
+						states[0],
+					];
+					focusedIndex = 0;
+					updateDisplay();
+				}
+
+				// Reset focus when returning from single
+				if (layout !== 'single' && current === 'single') {
+					focusedIndex = 0;
+					hasCycled = false;
+				}
+
+				container.className = layout;
+				if (isVertical && layout !== 'single') {
+					container.classList.add('vertical');
+				}
+
+				updateFocusIndicator();
+			}
+
+			function toggleOrientation() {
+				if (getLayout() !== 'single') {
+					container.classList.toggle('vertical');
+				}
+			}
+
+			function cycleFocus() {
+				const layout = getLayout();
+				if (layout === 'single') return;
+
+				hasCycled = true;
+				const count = layout === 'halves' ? 2 : 3;
+				focusedIndex = (focusedIndex + 1) % count;
+				updateFocusIndicator();
+			}
+
+			function cycleContent() {
+				const layout = getLayout();
+
+				if (layout === 'halves') {
+					[states[0], states[1]] = [states[1], states[0]];
+					focusedIndex = focusedIndex === 0 ? 1 : 0;
+				} else if (layout === 'split') {
+					states.unshift(states.pop());
+					focusedIndex = (focusedIndex + 1) % 3;
+				} else {
+					return;
+				}
+
+				updateDisplay();
+			}
+
+			document.addEventListener('keydown', (e) => {
+				if (layouts[e.key]) {
+					setLayout(layouts[e.key]);
+				} else if (e.key === '4') {
+					toggleOrientation();
+				} else if (e.key === 'Tab') {
+					e.preventDefault();
+					cycleFocus();
+				} else if (e.key === '5') {
+					cycleContent();
+				}
+			});
+
+			updateDisplay();
+		</script>
+	</body>
+</html>
