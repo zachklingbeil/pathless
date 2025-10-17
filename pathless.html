@@ -6,10 +6,9 @@
 		<title>{{.Title}}</title>
 		<style>
 			:root {
-				--border-width: medium;
+				--border-width: 3px;
 				--border-color: blue;
 			}
-
 			* {
 				box-sizing: border-box;
 				margin: 0;
@@ -18,11 +17,9 @@
 				-ms-overflow-style: none;
 				user-select: none;
 			}
-
 			*::-webkit-scrollbar {
 				display: none;
 			}
-
 			html,
 			body {
 				height: 100vh;
@@ -31,17 +28,14 @@
 				background: black;
 				color: white;
 			}
-
 			body {
-				border: var(--border-width) solid var(--border-color);
-				border-radius: 5px;
+				border: medium solid var(--border-color);
+				border-radius: 0.3125em;
 			}
-
 			#app {
 				height: 100vh;
 				position: relative;
 			}
-
 			.panel {
 				position: absolute;
 				display: flex;
@@ -52,116 +46,105 @@
 				overflow: auto;
 				background: black;
 			}
-
 			a {
 				color: inherit;
 				text-decoration: underline;
 				text-align: center;
 			}
 		</style>
-	</head>
-	<body>
-		<div id="app">
-			<div class="panel"></div>
-			<div class="panel"></div>
-			<div class="panel"></div>
-		</div>
-
 		<script>
+			document.addEventListener(
+				'DOMContentLoaded',
+				() => new FrameViewer('')
+			);
+
 			class FrameViewer {
 				constructor(apiUrl = '{{.APIURL}}') {
 					this.apiUrl = apiUrl;
 					this.app = document.getElementById('app');
 					this.panels = Array.from(this.app.children);
-
-					// State
 					this.state = {
 						layout: 1,
-						orientation: 'h',
+						orientation: 'l',
 						focus: 0,
 						frames: [0, 0, 0],
 						totalFrames: null,
 					};
-
 					this.cache = new Map();
-					this.borderWidth = 3;
 
-					this.handleKey = this.handleKey.bind(this);
-					this.handleResize = this.handleResize.bind(this);
+					document.addEventListener('keydown', (e) =>
+						({
+							1: () => this.setLayout(1),
+							2: () => this.setLayout(2),
+							3: () => this.setLayout(3),
+							4: () => this.cycleContent(),
+							Tab: () => (e.preventDefault(), this.cycleFocus()),
+							e: () => this.navigate(1),
+							q: () => this.navigate(-1),
+						}[e.key]?.())
+					);
 
-					this.attachListeners();
 					this.updateLayout();
 					this.render();
 				}
 
-				attachListeners() {
-					document.addEventListener('keydown', this.handleKey);
-					window.addEventListener('resize', this.handleResize);
-				}
-
-				handleResize() {
-					this.updateLayout();
-				}
-
-				handleKey(e) {
-					const handlers = {
-						1: () => this.setLayout(1),
-						2: () => this.setLayout(2),
-						3: () => this.setLayout(3),
-						4: () => this.toggleOrientation(),
-						5: () => this.cycleContent(),
-						Tab: () => {
-							e.preventDefault();
-							this.cycleFocus();
-						},
-						e: () => this.navigate(1),
-						q: () => this.navigate(-1),
-					};
-
-					const handler = handlers[e.key];
-					if (handler) handler();
-				}
-
 				setLayout(layout) {
-					if (this.state.layout === layout) return;
-
-					// Moving to single panel - bring focused frame to front
-					if (layout === 1 && this.state.focus !== 0) {
-						this.swapFrames(0, this.state.focus);
-						this.state.focus = 0;
-					}
-
+					if (this.state.layout === layout)
+						return this.toggleOrientation();
+					if (layout === 1 && this.state.focus)
+						[
+							this.state.frames[0],
+							this.state.frames[this.state.focus],
+							this.state.focus,
+						] = [
+							this.state.frames[this.state.focus],
+							this.state.frames[0],
+							0,
+						];
 					this.state.layout = layout;
+					if (layout === 2) this.state.orientation = 'h';
+					else if (layout === 3) this.state.orientation = 'l';
 					this.updateLayout();
 					this.render();
 				}
 
 				toggleOrientation() {
-					if (this.state.layout === 1) return;
-					this.state.orientation =
-						this.state.orientation === 'h' ? 'v' : 'h';
-					this.updateLayout();
+					const { layout } = this.state;
+					if (layout === 2)
+						this.state.orientation =
+							this.state.orientation === 'h' ? 'v' : 'h';
+					else if (layout === 3) {
+						const cycle = { l: 't', t: 'r', r: 'b', b: 'l' };
+						this.state.orientation = cycle[this.state.orientation];
+					}
+					if (layout > 1) this.updateLayout();
 				}
 
 				cycleFocus() {
-					if (this.state.layout > 1) {
+					if (this.state.layout > 1)
 						this.state.focus =
 							(this.state.focus + 1) % this.state.layout;
-					}
 				}
 
 				cycleContent() {
-					const { layout, frames } = this.state;
-
+					const { layout, frames, orientation } = this.state;
 					if (layout === 2) {
-						this.swapFrames(0, 1);
+						[frames[0], frames[1]] = [frames[1], frames[0]];
 					} else if (layout === 3) {
-						const temp = frames[2];
-						frames[2] = frames[1];
-						frames[1] = frames[0];
-						frames[0] = temp;
+						if (orientation === 'l' || orientation === 't') {
+							[frames[0], frames[1], frames[2]] = [
+								frames[2],
+								frames[0],
+								frames[1],
+							];
+						} else {
+							[frames[0], frames[1], frames[2]] = [
+								frames[1],
+								frames[2],
+								frames[0],
+							];
+						}
 					}
-
 					if (layout > 1) {
 						this.state.focus = (this.state.focus + 1) % layout;
 						this.render();
@@ -169,124 +152,200 @@
 				}
 
 				navigate(delta) {
-					const max = this.state.totalFrames || 1000;
-					const idx = this.state.focus;
-					this.state.frames[idx] = this.wrap(
-						this.state.frames[idx] + delta,
-						max
-					);
+					const idx = this.state.focus,
+						max = this.state.totalFrames || 1000;
+					this.state.frames[idx] =
+						(((this.state.frames[idx] + delta) % max) + max) % max;
 					this.renderPanel(idx);
-				}
-
-				swapFrames(i, j) {
-					const temp = this.state.frames[i];
-					this.state.frames[i] = this.state.frames[j];
-					this.state.frames[j] = temp;
-				}
-
-				wrap(val, max) {
-					return ((val % max) + max) % max;
 				}
 
 				updateLayout() {
 					const { layout, orientation } = this.state;
-					const w = this.app.clientWidth;
-					const h = this.app.clientHeight;
-					const b = this.borderWidth;
+					const w = this.app.clientWidth,
+						h = this.app.clientHeight,
+						b = `${this.constructor.borderWidth}px solid var(--border-color)`;
 
-					// Single panel
+					const applyPanel = (idx, cfg) => {
+						const s = this.panels[idx].style;
+						s.display = 'flex';
+						s.left = cfg.left + 'px';
+						s.top = cfg.top + 'px';
+						s.width = cfg.width + 'px';
+						s.height = cfg.height + 'px';
+						s.border = 'none';
+						if (cfg.border) s[`border${cfg.border}`] = b;
+					};
+
+					this.panels.forEach((p) => (p.style.display = 'none'));
+
 					if (layout === 1) {
-						this.panels[0].style.cssText = `display:flex;left:0;top:0;width:${w}px;height:${h}px;border:none;`;
-						this.panels[1].style.display = 'none';
-						this.panels[2].style.display = 'none';
-						return;
-					}
-
-					// Two panels
-					if (layout === 2) {
+						applyPanel(0, { left: 0, top: 0, width: w, height: h });
+					} else if (layout === 2) {
 						if (orientation === 'h') {
-							const half = w / 2;
-							this.panels[0].style.cssText = `display:flex;left:0;top:0;width:${half}px;height:${h}px;border-right:${b}px solid var(--border-color);border-bottom:none;`;
-							this.panels[1].style.cssText = `display:flex;left:${half}px;top:0;width:${half}px;height:${h}px;border:none;`;
+							applyPanel(0, {
+								left: 0,
+								top: 0,
+								width: w / 2,
+								height: h,
+								border: 'Right',
+							});
+							applyPanel(1, {
+								left: w / 2,
+								top: 0,
+								width: w / 2,
+								height: h,
+							});
 						} else {
-							const half = h / 2;
-							this.panels[0].style.cssText = `display:flex;left:0;top:0;width:${w}px;height:${half}px;border-bottom:${b}px solid var(--border-color);border-right:none;`;
-							this.panels[1].style.cssText = `display:flex;left:0;top:${half}px;width:${w}px;height:${half}px;border:none;`;
+							applyPanel(0, {
+								left: 0,
+								top: 0,
+								width: w,
+								height: h / 2,
+								border: 'Bottom',
+							});
+							applyPanel(1, {
+								left: 0,
+								top: h / 2,
+								width: w,
+								height: h / 2,
+							});
 						}
-						this.panels[2].style.display = 'none';
-						return;
-					}
-
-					// Three panels
-					if (layout === 3) {
-						if (orientation === 'h') {
-							const halfW = w / 2;
-							const halfH = h / 2;
-							this.panels[0].style.cssText = `display:flex;left:0;top:0;width:${halfW}px;height:${h}px;border-right:${b}px solid var(--border-color);border-bottom:none;`;
-							this.panels[1].style.cssText = `display:flex;left:${halfW}px;top:0;width:${halfW}px;height:${halfH}px;border-bottom:${b}px solid var(--border-color);border-right:none;`;
-							this.panels[2].style.cssText = `display:flex;left:${halfW}px;top:${halfH}px;width:${halfW}px;height:${halfH}px;border:none;`;
-						} else {
-							const halfW = w / 2;
-							const halfH = h / 2;
-							this.panels[0].style.cssText = `display:flex;left:0;top:0;width:${w}px;height:${halfH}px;border-bottom:${b}px solid var(--border-color);border-right:none;`;
-							this.panels[1].style.cssText = `display:flex;left:0;top:${halfH}px;width:${halfW}px;height:${halfH}px;border-right:${b}px solid var(--border-color);border-bottom:none;`;
-							this.panels[2].style.cssText = `display:flex;left:${halfW}px;top:${halfH}px;width:${halfW}px;height:${halfH}px;border:none;`;
+					} else if (layout === 3) {
+						if (orientation === 'l') {
+							applyPanel(0, {
+								left: 0,
+								top: 0,
+								width: w / 2,
+								height: h,
+								border: 'Right',
+							});
+							applyPanel(1, {
+								left: w / 2,
+								top: 0,
+								width: w / 2,
+								height: h / 2,
+								border: 'Bottom',
+							});
+							applyPanel(2, {
+								left: w / 2,
+								top: h / 2,
+								width: w / 2,
+								height: h / 2,
+							});
+						} else if (orientation === 't') {
+							applyPanel(0, {
+								left: 0,
+								top: 0,
+								width: w,
+								height: h / 2,
+								border: 'Bottom',
+							});
+							applyPanel(1, {
+								left: 0,
+								top: h / 2,
+								width: w / 2,
+								height: h / 2,
+								border: 'Right',
+							});
+							applyPanel(2, {
+								left: w / 2,
+								top: h / 2,
+								width: w / 2,
+								height: h / 2,
+							});
+						} else if (orientation === 'r') {
+							applyPanel(0, {
+								left: w / 2,
+								top: 0,
+								width: w / 2,
+								height: h,
+								border: 'Left',
+							});
+							applyPanel(1, {
+								left: 0,
+								top: 0,
+								width: w / 2,
+								height: h / 2,
+								border: 'Bottom',
+							});
+							applyPanel(2, {
+								left: 0,
+								top: h / 2,
+								width: w / 2,
+								height: h / 2,
+							});
+						} else if (orientation === 'b') {
+							applyPanel(0, {
+								left: 0,
+								top: h / 2,
+								width: w,
+								height: h / 2,
+								border: 'Top',
+							});
+							applyPanel(1, {
+								left: 0,
+								top: 0,
+								width: w / 2,
+								height: h / 2,
+								border: 'Right',
+							});
+							applyPanel(2, {
+								left: w / 2,
+								top: 0,
+								width: w / 2,
+								height: h / 2,
+							});
 						}
 					}
 				}
 
+				static borderWidth = 3;
+
 				async fetchFrame(idx) {
 					if (this.cache.has(idx)) return this.cache.get(idx);
-
-					// Demo mode - no API
-					if (!this.apiUrl) {
-						const content = `<div>Frame ${idx}</div>`;
-						this.cache.set(idx, content);
-						return content;
-					}
-
+					if (!this.apiUrl)
+						return this.cache
+							.set(idx, `<div>Frame ${idx}</div>`)
+							.get(idx);
 					try {
 						const res = await fetch(this.apiUrl, {
 							headers: { 'X-Frame-Request': idx.toString() },
 						});
-
 						if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-						// Extract total frames from header
 						const total = res.headers.get('X-Total-Frames');
-						if (total && !this.state.totalFrames) {
+						if (total && !this.state.totalFrames)
 							this.state.totalFrames = parseInt(total);
-						}
-
 						const html = await res.text();
-						this.cache.set(idx, html);
-						return html;
+						return this.cache.set(idx, html).get(idx);
 					} catch (err) {
 						console.error(`Failed to fetch frame ${idx}:`, err);
-						const content = `<div>Error loading frame ${idx}</div>`;
-						this.cache.set(idx, content);
-						return content;
+						return this.cache
+							.set(idx, `<div>Error loading frame ${idx}</div>`)
+							.get(idx);
 					}
 				}
 
 				async renderPanel(idx) {
-					const content = await this.fetchFrame(
+					this.panels[idx].innerHTML = await this.fetchFrame(
 						this.state.frames[idx]
 					);
-					this.panels[idx].innerHTML = content;
 				}
 
 				async render() {
-					const promises = [];
-					for (let i = 0; i < this.state.layout; i++) {
-						promises.push(this.renderPanel(i));
-					}
-					await Promise.all(promises);
+					await Promise.all(
+						Array.from({ length: this.state.layout }, (_, i) =>
+							this.renderPanel(i)
+						)
+					);
 				}
 			}
-
-			// Initialize app
-			const viewer = new FrameViewer('');
 		</script>
+	</head>
+	<body>
+		<div id="app">
+			<div class="panel"></div>
+			<div class="panel"></div>
+			<div class="panel"></div>
+		</div>
 	</body>
 </html>
