@@ -125,186 +125,190 @@
 		<script>
 			const API_URL = '{{.APIURL}}';
 			const container = document.getElementById('container');
-			const sections = Array.from(container.children);
+			const sectionElements = Array.from(container.children);
 
-			let states = [0, null, null];
-			let focusedIndex = 0;
-			let totalFrames = null;
+			// Layout configuration
+			const LAYOUTS = {
+				'layout-single': { key: '1', count: 1 },
+				'layout-halves': { key: '2', count: 2 },
+				'layout-split': { key: '3', count: 3 },
+			};
+
+			// State
+			const sections = [{ frame: 0 }, { frame: 0 }, { frame: 0 }];
 			let currentLayout = 'layout-single';
+			let orientation = 'horizontal';
+			let focusedSection = 0;
+			let totalFrames = null;
 
+			// Cache
 			const cache = new Map();
-			const pending = new Map();
 
-			const layouts = {
-				1: 'layout-single',
-				2: 'layout-halves',
-				3: 'layout-split',
+			// Utilities
+			const wrap = (val, max) => ((val % max) + max) % max;
+
+			const swapFrames = (i, j) => {
+				[sections[i].frame, sections[j].frame] = [
+					sections[j].frame,
+					sections[i].frame,
+				];
 			};
 
-			const layoutCounts = {
-				'layout-single': 1,
-				'layout-halves': 2,
-				'layout-split': 3,
-			};
+			const getVisibleCount = () => LAYOUTS[currentLayout].count;
 
+			// Fetch frame content
 			const fetchFrame = async (idx) => {
 				if (!API_URL) {
 					cache.set(idx, `<div>Frame ${idx}</div>`);
 					return;
 				}
 
-				if (cache.has(idx) || pending.has(idx)) {
-					return pending.get(idx);
-				}
+				if (cache.has(idx)) return;
 
-				const promise = fetch(API_URL, {
-					headers: { 'X-Frame-Request': idx.toString() },
-				})
-					.then((res) => {
-						if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-						const total = res.headers.get('X-Total-Frames');
-						if (total && !totalFrames)
-							totalFrames = parseInt(total);
-
-						return res.text();
-					})
-					.then((html) => {
-						cache.set(idx, html);
-						pending.delete(idx);
-					})
-					.catch((err) => {
-						console.error(`Failed to fetch frame ${idx}:`, err);
-						cache.set(idx, `<div>Error loading frame ${idx}</div>`);
-						pending.delete(idx);
+				try {
+					const res = await fetch(API_URL, {
+						headers: { 'X-Frame-Request': idx.toString() },
 					});
 
-				pending.set(idx, promise);
-				return promise;
-			};
+					if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-			const renderSection = (i) => {
-				const content = cache.get(states[i]);
-				if (content) sections[i].innerHTML = content;
-			};
-
-			const updateDisplay = async () => {
-				const count = layoutCounts[currentLayout];
-				const promises = [];
-
-				// Initialize unset states
-				for (let i = 0; i < count; i++) {
-					if (states[i] === null) {
-						states[i] = i === 2 ? 0 : states[0];
+					const total = res.headers.get('X-Total-Frames');
+					if (total && !totalFrames) {
+						totalFrames = parseInt(total);
 					}
-				}
 
+					const html = await res.text();
+					cache.set(idx, html);
+				} catch (err) {
+					console.error(`Failed to fetch frame ${idx}:`, err);
+					cache.set(idx, `<div>Error loading frame ${idx}</div>`);
+				}
+			};
+
+			// Render a single section
+			const renderSection = (i) => {
+				const content = cache.get(sections[i].frame);
+				if (content) {
+					sectionElements[i].innerHTML = content;
+				}
+			};
+
+			// Update display: fetch and render all visible sections
+			const updateDisplay = async () => {
+				const count = getVisibleCount();
+
+				// Fetch all needed frames
+				const fetches = [];
 				for (let i = 0; i < count; i++) {
-					const promise = fetchFrame(states[i]);
-					if (promise) promises.push(promise);
+					fetches.push(fetchFrame(sections[i].frame));
 				}
+				await Promise.all(fetches);
 
-				await Promise.all(promises);
-
+				// Render all visible sections
 				for (let i = 0; i < count; i++) {
 					renderSection(i);
 				}
 			};
 
-			const setLayout = (layout) => {
+			// Apply layout classes to container
+			const applyLayout = () => {
+				const classes = [currentLayout];
 				if (
-					currentLayout === layout &&
-					!container.classList.contains('vertical')
-				)
-					return;
-
-				const wasVertical = container.classList.contains('vertical');
-
-				if (
-					layout === 'layout-single' &&
-					currentLayout !== 'layout-single' &&
-					focusedIndex !== 0
+					orientation === 'vertical' &&
+					currentLayout !== 'layout-single'
 				) {
-					[states[0], states[focusedIndex]] = [
-						states[focusedIndex],
-						states[0],
-					];
-					focusedIndex = 0;
-				} else if (
-					layout !== 'layout-single' &&
-					currentLayout === 'layout-single'
-				) {
-					focusedIndex = 0;
+					classes.push('vertical');
+				}
+				container.className = classes.join(' ');
+			};
+
+			// Set layout mode
+			const setLayout = (layoutName) => {
+				if (currentLayout === layoutName) return;
+
+				// When going to single layout, swap focused section to position 0
+				if (layoutName === 'layout-single' && focusedSection !== 0) {
+					swapFrames(0, focusedSection);
+					focusedSection = 0;
 				}
 
-				currentLayout = layout;
-				container.className =
-					layout +
-					(wasVertical && layout !== 'layout-single'
-						? ' vertical'
-						: '');
+				currentLayout = layoutName;
+				applyLayout();
 				updateDisplay();
 			};
 
+			// Toggle between horizontal and vertical orientation
 			const toggleOrientation = () => {
-				if (currentLayout !== 'layout-single') {
-					container.classList.toggle('vertical');
-				}
+				if (currentLayout === 'layout-single') return;
+
+				orientation =
+					orientation === 'horizontal' ? 'vertical' : 'horizontal';
+				applyLayout();
 			};
 
+			// Cycle focus between visible sections
 			const cycleFocus = () => {
-				const count = layoutCounts[currentLayout];
-				if (count > 1) focusedIndex = (focusedIndex + 1) % count;
+				const count = getVisibleCount();
+				if (count > 1) {
+					focusedSection = (focusedSection + 1) % count;
+				}
 			};
 
+			// Cycle content between sections
 			const cycleContent = () => {
-				if (currentLayout === 'layout-halves') {
-					[states[0], states[1]] = [states[1], states[0]];
-					focusedIndex ^= 1;
-					updateDisplay();
-				} else if (currentLayout === 'layout-split') {
-					const temp = states[2];
-					states[2] = states[1];
-					states[1] = states[0];
-					states[0] = temp;
-					focusedIndex = (focusedIndex + 1) % 3;
+				const count = getVisibleCount();
+
+				if (count === 2) {
+					swapFrames(0, 1);
+				} else if (count === 3) {
+					const temp = sections[2].frame;
+					sections[2].frame = sections[1].frame;
+					sections[1].frame = sections[0].frame;
+					sections[0].frame = temp;
+				}
+
+				if (count > 1) {
+					focusedSection = (focusedSection + 1) % count;
 					updateDisplay();
 				}
 			};
 
+			// Navigate forward or backward
 			const navigate = (direction) => {
 				const max = totalFrames || 1000;
-				const current = states[focusedIndex];
-				let next = current + direction;
-
-				// Wrap around
-				if (next < 0) next = max - 1;
-				if (next >= max) next = 0;
-
-				if (next !== current) {
-					states[focusedIndex] = next;
-					fetchFrame(next).then(() => renderSection(focusedIndex));
-				}
+				sections[focusedSection].frame = wrap(
+					sections[focusedSection].frame + direction,
+					max
+				);
+				fetchFrame(sections[focusedSection].frame).then(() =>
+					renderSection(focusedSection)
+				);
 			};
 
-			document.addEventListener('keydown', (e) => {
-				const layout = layouts[e.key];
-				if (layout) {
-					setLayout(layout);
-				} else if (e.key === '4') {
-					toggleOrientation();
-				} else if (e.key === 'Tab') {
+			// Keyboard command map
+			const COMMANDS = {
+				1: () => setLayout('layout-single'),
+				2: () => setLayout('layout-halves'),
+				3: () => setLayout('layout-split'),
+				4: toggleOrientation,
+				5: cycleContent,
+				Tab: (e) => {
 					e.preventDefault();
 					cycleFocus();
-				} else if (e.key === '5') {
-					cycleContent();
-				} else if (e.key.toLowerCase() === 'e') {
-					navigate(1);
-				} else if (e.key.toLowerCase() === 'q') {
-					navigate(-1);
+				},
+				e: () => navigate(1),
+				q: () => navigate(-1),
+			};
+
+			// Keyboard controls
+			document.addEventListener('keydown', (e) => {
+				const command = COMMANDS[e.key];
+				if (command) {
+					command(e);
 				}
 			});
 
+			// Initialize
 			updateDisplay();
 		</script>
 	</body>
