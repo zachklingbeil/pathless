@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Frame Viewer</title>
+		<title>{{.Title}}</title>
 		<style>
 			:root {
 				--border-width: medium;
@@ -69,7 +69,7 @@
 
 		<script>
 			class FrameViewer {
-				constructor(apiUrl = '') {
+				constructor(apiUrl = '{{.APIURL}}') {
 					this.apiUrl = apiUrl;
 					this.app = document.getElementById('app');
 					this.panels = Array.from(this.app.children);
