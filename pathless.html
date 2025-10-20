@@ -309,10 +309,10 @@
 							.get(idx);
 					try {
 						const res = await fetch(this.apiUrl, {
-							headers: { 'X-Frame-Request': idx.toString() },
+							headers: { 'X-Frame': idx.toString() },
 						});
 						if (!res.ok) throw new Error(`HTTP ${res.status}`);
-						const total = res.headers.get('X-Total-Frames');
+						const total = res.headers.get('X-Index');
 						if (total && !this.state.totalFrames)
 							this.state.totalFrames = parseInt(total);
 						const html = await res.text();
