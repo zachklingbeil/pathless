@@ -1,22 +1,20 @@
 # Build stage
 FROM --platform=$BUILDPLATFORM golang:latest AS go_builder
-WORKDIR /app
-
-# Cache dependencies
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    # --mount=type=bind,source=go.sum,target=go.sum \
-    --mount=type=bind,source=go.mod,target=go.mod \
-    go mod download -x
+WORKDIR /src
 
 ARG TARGETARCH
 
+# Cache Go modules
+RUN --mount=type=cache,target=/go/pkg/mod \
+    true
+
 # Build static binary
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=bind,target=. \
-    CGO_ENABLED=0 GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /app/pathless .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=bind,source=.,target=/src \
+    CGO_ENABLED=0 GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/pathless .
 
 # Final stage
 FROM scratch
-COPY --from=go_builder /app/pathless /pathless
+COPY --from=go_builder /out/pathless /pathless
 USER 10001
 ENTRYPOINT ["/pathless"]
