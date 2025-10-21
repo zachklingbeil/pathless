@@ -21,7 +21,9 @@ func init() {
 		title = "hello_universe"
 	}
 	apiURL := os.Getenv("API_URL")
-	if apiURL != "" && !strings.HasPrefix(apiURL, "http://") && !strings.HasPrefix(apiURL, "https://") {
+	if apiURL == "" {
+		apiURL = "http://localhost:1002"
+	} else if !strings.HasPrefix(apiURL, "http://") && !strings.HasPrefix(apiURL, "https://") {
 		apiURL = "https://" + apiURL
 	}
 

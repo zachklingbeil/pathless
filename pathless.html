@@ -162,141 +162,73 @@
 				updateLayout() {
 					const { layout, orientation } = this.state;
 					const w = this.app.clientWidth,
-						h = this.app.clientHeight,
-						b = `${this.constructor.borderWidth}px solid var(--border-color)`;
+						h = this.app.clientHeight;
 
-					const applyPanel = (idx, cfg) => {
-						const s = this.panels[idx].style;
-						s.display = 'flex';
-						s.left = cfg.left + 'px';
-						s.top = cfg.top + 'px';
-						s.width = cfg.width + 'px';
-						s.height = cfg.height + 'px';
-						s.border = 'none';
-						if (cfg.border) s[`border${cfg.border}`] = b;
+					const panel = (
+						left,
+						top,
+						width,
+						height,
+						border = null
+					) => ({ left, top, width, height, border });
+
+					const layouts = {
+						1: [panel(0, 0, w, h)],
+						2: {
+							h: [
+								panel(0, 0, w / 2, h, 'Right'),
+								panel(w / 2, 0, w / 2, h),
+							],
+							v: [
+								panel(0, 0, w, h / 2, 'Bottom'),
+								panel(0, h / 2, w, h / 2),
+							],
+						},
+						3: {
+							l: [
+								panel(0, 0, w / 2, h, 'Right'),
+								panel(w / 2, 0, w / 2, h / 2, 'Bottom'),
+								panel(w / 2, h / 2, w / 2, h / 2),
+							],
+							t: [
+								panel(0, 0, w, h / 2, 'Bottom'),
+								panel(0, h / 2, w / 2, h / 2, 'Right'),
+								panel(w / 2, h / 2, w / 2, h / 2),
+							],
+							r: [
+								panel(w / 2, 0, w / 2, h, 'Left'),
+								panel(0, 0, w / 2, h / 2, 'Bottom'),
+								panel(0, h / 2, w / 2, h / 2),
+							],
+							b: [
+								panel(0, h / 2, w, h / 2, 'Top'),
+								panel(0, 0, w / 2, h / 2, 'Right'),
+								panel(w / 2, 0, w / 2, h / 2),
+							],
+						},
 					};
 
-					this.panels.forEach((p) => (p.style.display = 'none'));
+					const config =
+						layout === 1
+							? layouts[1]
+							: layouts[layout][orientation];
+					const b = `${this.constructor.borderWidth}px solid var(--border-color)`;
 
-					if (layout === 1) {
-						applyPanel(0, { left: 0, top: 0, width: w, height: h });
-					} else if (layout === 2) {
-						if (orientation === 'h') {
-							applyPanel(0, {
-								left: 0,
-								top: 0,
-								width: w / 2,
-								height: h,
-								border: 'Right',
-							});
-							applyPanel(1, {
-								left: w / 2,
-								top: 0,
-								width: w / 2,
-								height: h,
-							});
+					this.panels.forEach((p, i) => {
+						if (i < config.length) {
+							const s = p.style;
+							const cfg = config[i];
+							s.display = 'flex';
+							s.left = cfg.left + 'px';
+							s.top = cfg.top + 'px';
+							s.width = cfg.width + 'px';
+							s.height = cfg.height + 'px';
+							s.border = 'none';
+							if (cfg.border) s[`border${cfg.border}`] = b;
 						} else {
-							applyPanel(0, {
-								left: 0,
-								top: 0,
-								width: w,
-								height: h / 2,
-								border: 'Bottom',
-							});
-							applyPanel(1, {
-								left: 0,
-								top: h / 2,
-								width: w,
-								height: h / 2,
-							});
+							p.style.display = 'none';
 						}
-					} else if (layout === 3) {
-						if (orientation === 'l') {
-							applyPanel(0, {
-								left: 0,
-								top: 0,
-								width: w / 2,
-								height: h,
-								border: 'Right',
-							});
-							applyPanel(1, {
-								left: w / 2,
-								top: 0,
-								width: w / 2,
-								height: h / 2,
-								border: 'Bottom',
-							});
-							applyPanel(2, {
-								left: w / 2,
-								top: h / 2,
-								width: w / 2,
-								height: h / 2,
-							});
-						} else if (orientation === 't') {
-							applyPanel(0, {
-								left: 0,
-								top: 0,
-								width: w,
-								height: h / 2,
-								border: 'Bottom',
-							});
-							applyPanel(1, {
-								left: 0,
-								top: h / 2,
-								width: w / 2,
-								height: h / 2,
-								border: 'Right',
-							});
-							applyPanel(2, {
-								left: w / 2,
-								top: h / 2,
-								width: w / 2,
-								height: h / 2,
-							});
-						} else if (orientation === 'r') {
-							applyPanel(0, {
-								left: w / 2,
-								top: 0,
-								width: w / 2,
-								height: h,
-								border: 'Left',
-							});
-							applyPanel(1, {
-								left: 0,
-								top: 0,
-								width: w / 2,
-								height: h / 2,
-								border: 'Bottom',
-							});
-							applyPanel(2, {
-								left: 0,
-								top: h / 2,
-								width: w / 2,
-								height: h / 2,
-							});
-						} else if (orientation === 'b') {
-							applyPanel(0, {
-								left: 0,
-								top: h / 2,
-								width: w,
-								height: h / 2,
-								border: 'Top',
-							});
-							applyPanel(1, {
-								left: 0,
-								top: 0,
-								width: w / 2,
-								height: h / 2,
-								border: 'Right',
-							});
-							applyPanel(2, {
-								left: w / 2,
-								top: 0,
-								width: w / 2,
-								height: h / 2,
-							});
-						}
-					}
+					});
 				}
 
 				static borderWidth = 3;
