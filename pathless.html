@@ -61,7 +61,22 @@
 			);
 
 			class FrameViewer {
-				constructor(apiUrl = '{{.APIURL}}') {
+				static ORIENTATIONS = {
+					2: { h: 'v', v: 'h' },
+					3: { l: 't', t: 'r', r: 'b', b: 'l' },
+				};
+
+				static DEFAULTS = { 1: null, 2: 'h', 3: 'l' };
+
+				static ROTATIONS = {
+					2: (f) => [f[1], f[0]],
+					3: {
+						left: (f) => [f[2], f[0], f[1]],
+						right: (f) => [f[1], f[2], f[0]],
+					},
+				};
+
+				constructor(apiUrl) {
 					this.apiUrl = apiUrl;
 					this.app = document.getElementById('app');
 					this.panels = Array.from(this.app.children);
@@ -74,194 +89,224 @@
 					};
 					this.cache = new Map();
 
-					document.addEventListener('keydown', (e) =>
-						({
-							1: () => this.setLayout(1),
-							2: () => this.setLayout(2),
-							3: () => this.setLayout(3),
-							4: () => this.cycleContent(),
-							Tab: () => (e.preventDefault(), this.cycleFocus()),
-							e: () => this.navigate(1),
-							q: () => this.navigate(-1),
-						}[e.key]?.())
-					);
+					// Cache dimensions and configs
+					this.dimensions = { w: 0, h: 0 };
+					this.layoutCache = null;
 
-					window.addEventListener('resize', () =>
-						this.updateLayout()
+					document.addEventListener('keydown', (e) =>
+						this.handleKey(e)
 					);
+					window.addEventListener('resize', () => this.onResize());
 
 					this.updateLayout();
 					this.render();
 				}
 
+				handleKey(e) {
+					const actions = {
+						1: () => this.setLayout(1),
+						2: () => this.setLayout(2),
+						3: () => this.setLayout(3),
+						4: () => this.cycleContent(),
+						Tab: () => (e.preventDefault(), this.cycleFocus()),
+						e: () => this.navigate(1),
+						q: () => this.navigate(-1),
+					};
+					actions[e.key]?.();
+				}
+
 				setLayout(layout) {
-					if (this.state.layout === layout)
-						return this.toggleOrientation();
-					if (layout === 1 && this.state.focus)
+					const { layout: current, focus } = this.state;
+
+					if (current === layout) {
+						this.toggleOrientation();
+						return;
+					}
+
+					if (layout === 1 && focus) {
 						[
 							this.state.frames[0],
-							this.state.frames[this.state.focus],
+							this.state.frames[focus],
 							this.state.focus,
-						] = [
-							this.state.frames[this.state.focus],
-							this.state.frames[0],
-							0,
-						];
+						] = [this.state.frames[focus], this.state.frames[0], 0];
+					}
+
 					this.state.layout = layout;
-					if (layout === 2) this.state.orientation = 'h';
-					else if (layout === 3) this.state.orientation = 'l';
+					this.state.orientation = FrameViewer.DEFAULTS[layout];
+					this.layoutCache = null; // Invalidate cache
 					this.updateLayout();
 					this.render();
 				}
 
 				toggleOrientation() {
-					const { layout } = this.state;
-					if (layout === 2)
-						this.state.orientation =
-							this.state.orientation === 'h' ? 'v' : 'h';
-					else if (layout === 3) {
-						const cycle = { l: 't', t: 'r', r: 'b', b: 'l' };
-						this.state.orientation = cycle[this.state.orientation];
+					const { layout, orientation } = this.state;
+					const cycle = FrameViewer.ORIENTATIONS[layout];
+					if (cycle) {
+						this.state.orientation = cycle[orientation];
+						this.layoutCache = null; // Invalidate cache
+						this.updateLayout();
 					}
-					if (layout > 1) this.updateLayout();
 				}
 
 				cycleFocus() {
-					if (this.state.layout > 1)
-						this.state.focus =
-							(this.state.focus + 1) % this.state.layout;
+					const { layout, focus } = this.state;
+					if (layout > 1) this.state.focus = (focus + 1) % layout;
 				}
 
 				cycleContent() {
 					const { layout, frames, orientation } = this.state;
+					if (layout === 1) return;
+
+					const rotations = FrameViewer.ROTATIONS;
 					if (layout === 2) {
-						[frames[0], frames[1]] = [frames[1], frames[0]];
-					} else if (layout === 3) {
-						if (orientation === 'l' || orientation === 't') {
-							[frames[0], frames[1], frames[2]] = [
-								frames[2],
-								frames[0],
-								frames[1],
-							];
-						} else {
-							[frames[0], frames[1], frames[2]] = [
-								frames[1],
-								frames[2],
-								frames[0],
-							];
-						}
+						this.state.frames = rotations[2](frames);
+					} else {
+						const dir =
+							orientation === 'l' || orientation === 't'
+								? 'left'
+								: 'right';
+						this.state.frames = rotations[3][dir](frames);
 					}
-					if (layout > 1) {
-						this.state.focus = (this.state.focus + 1) % layout;
-						this.render();
-					}
+
+					this.state.focus = (this.state.focus + 1) % layout;
+					this.render();
 				}
 
 				navigate(delta) {
-					const idx = this.state.focus,
-						max = this.state.totalFrames || 1000;
-					this.state.frames[idx] =
-						(((this.state.frames[idx] + delta) % max) + max) % max;
-					this.renderPanel(idx);
+					const { focus, frames, totalFrames } = this.state;
+					const max = totalFrames || 1000;
+					frames[focus] =
+						(((frames[focus] + delta) % max) + max) % max;
+					this.renderPanel(focus);
+				}
+
+				onResize() {
+					const w = this.app.clientWidth;
+					const h = this.app.clientHeight;
+
+					// Only recalculate if dimensions actually changed
+					if (this.dimensions.w !== w || this.dimensions.h !== h) {
+						this.dimensions = { w, h };
+						this.layoutCache = null;
+						this.updateLayout();
+					}
 				}
 
 				updateLayout() {
 					const { layout, orientation } = this.state;
-					const w = this.app.clientWidth,
-						h = this.app.clientHeight;
 
-					const panel = (
-						left,
-						top,
-						width,
-						height,
-						border = null
-					) => ({ left, top, width, height, border });
+					// Return cached config if available
+					if (this.layoutCache) {
+						this.applyLayout(this.layoutCache);
+						return;
+					}
 
-					const layouts = {
-						1: [panel(0, 0, w, h)],
+					const { w, h } = this.dimensions.w
+						? this.dimensions
+						: (this.dimensions = {
+								w: this.app.clientWidth,
+								h: this.app.clientHeight,
+						  });
+
+					const config = this.getConfigs(w, h, layout, orientation);
+					this.layoutCache = config;
+					this.applyLayout(config);
+				}
+
+				applyLayout(config) {
+					const borderStyle = '3px solid var(--border-color)';
+
+					this.panels.forEach((p, i) => {
+						if (i >= config.length) {
+							p.style.display = 'none';
+							return;
+						}
+
+						const { left, top, width, height, border } = config[i];
+						const s = p.style;
+						s.display = 'flex';
+						s.left = `${left}px`;
+						s.top = `${top}px`;
+						s.width = `${width}px`;
+						s.height = `${height}px`;
+						s.border = 'none';
+						if (border) s[`border${border}`] = borderStyle;
+					});
+				}
+
+				getConfigs(w, h, layout, orientation) {
+					const p = (l, t, w, h, b = null) => ({
+						left: l,
+						top: t,
+						width: w,
+						height: h,
+						border: b,
+					});
+					const hw = w * 0.5;
+					const hh = h * 0.5;
+
+					const configs = {
+						1: [p(0, 0, w, h)],
 						2: {
-							h: [
-								panel(0, 0, w / 2, h, 'Right'),
-								panel(w / 2, 0, w / 2, h),
-							],
-							v: [
-								panel(0, 0, w, h / 2, 'Bottom'),
-								panel(0, h / 2, w, h / 2),
-							],
+							h: [p(0, 0, hw, h, 'Right'), p(hw, 0, hw, h)],
+							v: [p(0, 0, w, hh, 'Bottom'), p(0, hh, w, hh)],
 						},
 						3: {
 							l: [
-								panel(0, 0, w / 2, h, 'Right'),
-								panel(w / 2, 0, w / 2, h / 2, 'Bottom'),
-								panel(w / 2, h / 2, w / 2, h / 2),
+								p(0, 0, hw, h, 'Right'),
+								p(hw, 0, hw, hh, 'Bottom'),
+								p(hw, hh, hw, hh),
 							],
 							t: [
-								panel(0, 0, w, h / 2, 'Bottom'),
-								panel(0, h / 2, w / 2, h / 2, 'Right'),
-								panel(w / 2, h / 2, w / 2, h / 2),
+								p(0, 0, w, hh, 'Bottom'),
+								p(0, hh, hw, hh, 'Right'),
+								p(hw, hh, hw, hh),
 							],
 							r: [
-								panel(w / 2, 0, w / 2, h, 'Left'),
-								panel(0, 0, w / 2, h / 2, 'Bottom'),
-								panel(0, h / 2, w / 2, h / 2),
+								p(hw, 0, hw, h, 'Left'),
+								p(0, 0, hw, hh, 'Bottom'),
+								p(0, hh, hw, hh),
 							],
 							b: [
-								panel(0, h / 2, w, h / 2, 'Top'),
-								panel(0, 0, w / 2, h / 2, 'Right'),
-								panel(w / 2, 0, w / 2, h / 2),
+								p(0, hh, w, hh, 'Top'),
+								p(0, 0, hw, hh, 'Right'),
+								p(hw, 0, hw, hh),
 							],
 						},
 					};
 
-					const config =
-						layout === 1
-							? layouts[1]
-							: layouts[layout][orientation];
-					const b = `3px solid var(--border-color)`;
-
-					this.panels.forEach((p, i) => {
-						if (i < config.length) {
-							const s = p.style;
-							const cfg = config[i];
-							s.display = 'flex';
-							s.left = cfg.left + 'px';
-							s.top = cfg.top + 'px';
-							s.width = cfg.width + 'px';
-							s.height = cfg.height + 'px';
-							s.border = 'none';
-							if (cfg.border) s[`border${cfg.border}`] = b;
-						} else {
-							p.style.display = 'none';
-						}
-					});
+					return layout === 1
+						? configs[1]
+						: configs[layout][orientation];
 				}
-
-				static borderWidth = 3;
 
 				async fetchFrame(idx) {
 					if (this.cache.has(idx)) return this.cache.get(idx);
+
 					if (!this.apiUrl) {
-						console.warn('No API URL configured');
-						return this.cache
-							.set(idx, `<div>No API URL configured</div>`)
-							.get(idx);
+						const html = '<div>No API URL configured</div>';
+						this.cache.set(idx, html);
+						return html;
 					}
+
 					try {
 						const res = await fetch(this.apiUrl, {
 							headers: { 'X-Frame': idx.toString() },
 						});
 						if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
 						const total = res.headers.get('X-Index');
 						if (total && !this.state.totalFrames)
 							this.state.totalFrames = parseInt(total);
+
 						const html = await res.text();
-						return this.cache.set(idx, html).get(idx);
+						this.cache.set(idx, html);
+						return html;
 					} catch (err) {
 						console.error(`Failed to fetch frame ${idx}:`, err);
-						return this.cache
-							.set(idx, `<div>Error loading frame ${idx}</div>`)
-							.get(idx);
+						const html = `<div>Error loading frame ${idx}</div>`;
+						this.cache.set(idx, html);
+						return html;
 					}
 				}
 
