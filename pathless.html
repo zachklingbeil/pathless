@@ -26,6 +26,7 @@
 				font-family: 'Roboto', sans-serif;
 				background: black;
 				color: white;
+				scroll-behavior: smooth;
 			}
 			body {
 				border: var(--border);
@@ -35,6 +36,14 @@
 				color: inherit;
 				text-decoration: underline;
 				text-align: center;
+			}
+			img {
+				max-width: 100%;
+				max-height: 90%;
+				width: auto;
+				height: auto;
+				display: block;
+				object-fit: contain;
 			}
 			#app {
 				height: 100vh;
@@ -131,9 +140,14 @@
 					};
 					this.cache = new Map();
 
-					document.addEventListener('keydown', (e) =>
-						this.handleKey(e)
-					);
+					document.addEventListener('keydown', (e) => {
+						this.handleKey(e);
+						const panel = this.panels[this.state.focus];
+						if (panel)
+							panel.dispatchEvent(
+								new CustomEvent('panelKey', { detail: e })
+							);
+					});
 					this.updateLayout();
 					this.render();
 				}
@@ -236,21 +250,28 @@
 						return html;
 					}
 				}
+
 				async render(indices) {
-					if (indices) {
-						await Promise.all(
-							indices.map(async (i) => {
-								this.panels[i].innerHTML =
-									await this.fetchFrame(this.state.frames[i]);
-							})
-						);
-					} else {
-						for (let i = 0; i < this.state.layout; i++) {
-							this.panels[i].innerHTML = await this.fetchFrame(
+					const panelsToRender = indices ?? [
+						...Array(this.state.layout).keys(),
+					];
+
+					await Promise.all(
+						panelsToRender.map(async (i) => {
+							const panel = this.panels[i];
+							panel.innerHTML = await this.fetchFrame(
 								this.state.frames[i]
 							);
-						}
-					}
+							const scripts = panel.querySelectorAll('script');
+							scripts.forEach((s) => {
+								try {
+									new Function('panel', s.textContent)(panel);
+								} catch (e) {
+									console.error(e);
+								}
+							});
+						})
+					);
 				}
 			}
 		</script>
