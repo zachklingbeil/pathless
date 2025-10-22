@@ -6,8 +6,7 @@
 		<title>{{.Title}}</title>
 		<style>
 			:root {
-				--border-width: 3px;
-				--border-color: blue;
+				--border: medium solid blue;
 			}
 			* {
 				box-sizing: border-box;
@@ -29,20 +28,20 @@
 				color: white;
 			}
 			body {
-				border: medium solid var(--border-color);
+				border: var(--border);
 				border-radius: 0.3125em;
 			}
 			#app {
 				height: 100vh;
-				position: relative;
+				display: grid;
 			}
 			.panel {
-				position: absolute;
 				display: flex;
 				align-items: center;
 				justify-content: center;
 				padding: 1em;
-				overflow-x: hidden;
+				overflow: hidden;
+				background: black;
 			}
 			.panel > * {
 				max-width: 100%;
@@ -52,6 +51,69 @@
 				color: inherit;
 				text-decoration: underline;
 				text-align: center;
+			}
+
+			/* Layout classes */
+			.layout-1 {
+				grid-template: 1fr / 1fr;
+			}
+
+			.layout-2-h {
+				grid-template: 1fr / 1fr 1fr;
+			}
+			.layout-2-h .panel:first-child {
+				border-right: var(--border);
+			}
+
+			.layout-2-v {
+				grid-template: 1fr 1fr / 1fr;
+			}
+			.layout-2-v .panel:first-child {
+				border-bottom: var(--border);
+			}
+
+			.layout-3-l {
+				grid-template: 1fr 1fr / 1fr 1fr;
+			}
+			.layout-3-l .panel:first-child {
+				grid-row: 1 / 3;
+				border-right: var(--border);
+			}
+			.layout-3-l .panel:nth-child(2) {
+				border-bottom: var(--border);
+			}
+
+			.layout-3-t {
+				grid-template: 1fr 1fr / 1fr 1fr;
+			}
+			.layout-3-t .panel:first-child {
+				grid-column: 1 / 3;
+				border-bottom: var(--border);
+			}
+			.layout-3-t .panel:nth-child(2) {
+				border-right: var(--border);
+			}
+
+			.layout-3-r {
+				grid-template: 1fr 1fr / 1fr 1fr;
+			}
+			.layout-3-r .panel:last-child {
+				grid-row: 1 / 3;
+				border-right: var(--border);
+			}
+			.layout-3-r .panel:nth-child(1) {
+				border-bottom: var(--border);
+			}
+
+			.layout-3-b {
+				grid-template: 1fr 1fr / 1fr 1fr;
+			}
+			.layout-3-b .panel:last-child {
+				grid-column: 1 / 3;
+				border-top: var(--border);
+			}
+			.layout-3-b .panel:nth-child(1) {
+				border-right: var(--border);
 			}
 		</style>
 		<script>
@@ -89,14 +151,9 @@
 					};
 					this.cache = new Map();
 
-					// Cache dimensions and configs
-					this.dimensions = { w: 0, h: 0 };
-					this.layoutCache = null;
-
 					document.addEventListener('keydown', (e) =>
 						this.handleKey(e)
 					);
-					window.addEventListener('resize', () => this.onResize());
 
 					this.updateLayout();
 					this.render();
@@ -133,7 +190,6 @@
 
 					this.state.layout = layout;
 					this.state.orientation = FrameViewer.DEFAULTS[layout];
-					this.layoutCache = null; // Invalidate cache
 					this.updateLayout();
 					this.render();
 				}
@@ -143,7 +199,6 @@
 					const cycle = FrameViewer.ORIENTATIONS[layout];
 					if (cycle) {
 						this.state.orientation = cycle[orientation];
-						this.layoutCache = null; // Invalidate cache
 						this.updateLayout();
 					}
 				}
@@ -180,104 +235,19 @@
 					this.renderPanel(focus);
 				}
 
-				onResize() {
-					const w = this.app.clientWidth;
-					const h = this.app.clientHeight;
-
-					// Only recalculate if dimensions actually changed
-					if (this.dimensions.w !== w || this.dimensions.h !== h) {
-						this.dimensions = { w, h };
-						this.layoutCache = null;
-						this.updateLayout();
-					}
-				}
-
 				updateLayout() {
 					const { layout, orientation } = this.state;
+					const className =
+						layout === 1
+							? 'layout-1'
+							: `layout-${layout}-${orientation}`;
 
-					// Return cached config if available
-					if (this.layoutCache) {
-						this.applyLayout(this.layoutCache);
-						return;
-					}
+					this.app.className = className;
 
-					const { w, h } = this.dimensions.w
-						? this.dimensions
-						: (this.dimensions = {
-								w: this.app.clientWidth,
-								h: this.app.clientHeight,
-						  });
-
-					const config = this.getConfigs(w, h, layout, orientation);
-					this.layoutCache = config;
-					this.applyLayout(config);
-				}
-
-				applyLayout(config) {
-					const borderStyle = '3px solid var(--border-color)';
-
+					// Show/hide panels based on layout
 					this.panels.forEach((p, i) => {
-						if (i >= config.length) {
-							p.style.display = 'none';
-							return;
-						}
-
-						const { left, top, width, height, border } = config[i];
-						const s = p.style;
-						s.display = 'flex';
-						s.left = `${left}px`;
-						s.top = `${top}px`;
-						s.width = `${width}px`;
-						s.height = `${height}px`;
-						s.border = 'none';
-						if (border) s[`border${border}`] = borderStyle;
+						p.style.display = i < layout ? 'flex' : 'none';
 					});
-				}
-
-				getConfigs(w, h, layout, orientation) {
-					const p = (l, t, w, h, b = null) => ({
-						left: l,
-						top: t,
-						width: w,
-						height: h,
-						border: b,
-					});
-					const hw = w * 0.5;
-					const hh = h * 0.5;
-
-					const configs = {
-						1: [p(0, 0, w, h)],
-						2: {
-							h: [p(0, 0, hw, h, 'Right'), p(hw, 0, hw, h)],
-							v: [p(0, 0, w, hh, 'Bottom'), p(0, hh, w, hh)],
-						},
-						3: {
-							l: [
-								p(0, 0, hw, h, 'Right'),
-								p(hw, 0, hw, hh, 'Bottom'),
-								p(hw, hh, hw, hh),
-							],
-							t: [
-								p(0, 0, w, hh, 'Bottom'),
-								p(0, hh, hw, hh, 'Right'),
-								p(hw, hh, hw, hh),
-							],
-							r: [
-								p(hw, 0, hw, h, 'Left'),
-								p(0, 0, hw, hh, 'Bottom'),
-								p(0, hh, hw, hh),
-							],
-							b: [
-								p(0, hh, w, hh, 'Top'),
-								p(0, 0, hw, hh, 'Right'),
-								p(hw, 0, hw, hh),
-							],
-						},
-					};
-
-					return layout === 1
-						? configs[1]
-						: configs[layout][orientation];
 				}
 
 				async fetchFrame(idx) {
