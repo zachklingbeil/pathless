@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Frame Viewer</title>
+		<title>{{.Title}}</title>
 		<style>
 			:root {
 				--border: medium solid blue;
@@ -120,15 +120,18 @@
 			const LAYOUT_CONFIG = [
 				{
 					count: 1,
+					panels: 1,
 					rotate: null,
 				},
 				{
 					count: 2,
-					rotate: (f) => [f[1], f[0]],
+					panels: 2,
+					rotate: [1, 0],
 				},
 				{
 					count: 4,
-					rotate: (f) => [f[2], f[0], f[1]],
+					panels: 3,
+					rotate: [2, 0, 1],
 				},
 			];
 			class FrameViewer {
@@ -144,7 +147,6 @@
 						frames: [0, 0, 0],
 					};
 					this.cache = new Map();
-
 					document.addEventListener('keydown', (e) => {
 						this.handleKey(e);
 						const panel = this.panels[this.state.focus];
@@ -170,7 +172,6 @@
 				}
 				setLayout(layout) {
 					const { layout: currentLayout, focus, frames } = this.state;
-
 					if (currentLayout === layout) {
 						const config = LAYOUT_CONFIG[layout];
 						this.state.subindex =
@@ -178,7 +179,8 @@
 						this.updateLayout();
 						return;
 					}
-					if (focus >= layout + 1) {
+					const config = LAYOUT_CONFIG[layout];
+					if (focus >= config.panels) {
 						[frames[0], frames[focus]] = [frames[focus], frames[0]];
 						this.state.focus = 0;
 					}
@@ -188,17 +190,18 @@
 					this.render();
 				}
 				cycleFocus() {
-					const { layout, focus } = this.state;
-					if (layout > 0)
-						this.state.focus = (focus + 1) % (layout + 1);
+					const config = LAYOUT_CONFIG[this.state.layout];
+					if (config.panels > 1) {
+						this.state.focus =
+							(this.state.focus + 1) % config.panels;
+					}
 				}
 				cycleContent() {
 					const { layout, frames } = this.state;
-					if (layout === 0) return;
-
 					const config = LAYOUT_CONFIG[layout];
-					this.state.frames = config.rotate(frames);
-					this.state.focus = (this.state.focus + 1) % (layout + 1);
+					if (!config.rotate) return;
+					this.state.frames = config.rotate.map((i) => frames[i]);
+					this.state.focus = (this.state.focus + 1) % config.panels;
 					this.render();
 				}
 				navigate(delta) {
@@ -209,11 +212,12 @@
 				}
 				updateLayout() {
 					const { layout, subindex } = this.state;
+					const config = LAYOUT_CONFIG[layout];
 					this.app.className = `layout-${layout}-${subindex}`;
 
 					for (let i = 0; i < this.panels.length; i++) {
 						const panel = this.panels[i];
-						const shouldShow = i < layout + 1 ? 'flex' : 'none';
+						const shouldShow = i < config.panels ? 'flex' : 'none';
 						if (panel.style.display !== shouldShow) {
 							panel.style.display = shouldShow;
 						}
@@ -245,8 +249,9 @@
 					}
 				}
 				async render(indices) {
+					const config = LAYOUT_CONFIG[this.state.layout];
 					const panelsToRender = indices ?? [
-						...Array(this.state.layout + 1).keys(),
+						...Array(config.panels).keys(),
 					];
 					await Promise.all(
 						panelsToRender.map(async (i) => {
