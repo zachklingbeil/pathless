@@ -117,23 +117,6 @@
 			}
 		</style>
 		<script>
-			const LAYOUT_CONFIG = [
-				{
-					count: 1,
-					panels: 1,
-					rotate: null,
-				},
-				{
-					count: 2,
-					panels: 2,
-					rotate: [1, 0],
-				},
-				{
-					count: 4,
-					panels: 3,
-					rotate: [2, 0, 1],
-				},
-			];
 			class FrameViewer {
 				constructor(apiUrl) {
 					this.apiUrl = apiUrl;
@@ -141,15 +124,19 @@
 					this.panels = Array.from(this.app.children);
 					this.totalFrames = null;
 					this.state = {
-						layout: 0,
-						subindex: 0,
-						focus: 0,
-						frames: [0, 0, 0],
+						frames: [0, 0, 0], // Frame content for each panel
+						index: [0, 0, 0], // [layout, variant, focus]
+						layouts: [
+							{ panels: 1, count: 1, rotate: null },
+							{ panels: 2, count: 2, rotate: [1, 0] },
+							{ panels: 3, count: 4, rotate: [2, 0, 1] },
+						],
 					};
 					this.cache = new Map();
 					document.addEventListener('keydown', (e) => {
 						this.handleKey(e);
-						const panel = this.panels[this.state.focus];
+						const [, , focus] = this.state.index;
+						const panel = this.panels[focus];
 						if (panel)
 							panel.dispatchEvent(
 								new CustomEvent('panelKey', { detail: e })
@@ -171,53 +158,55 @@
 					actions[e.key]?.();
 				}
 				setLayout(layout) {
-					const { layout: currentLayout, focus, frames } = this.state;
-					if (currentLayout === layout) {
-						const config = LAYOUT_CONFIG[layout];
-						this.state.subindex =
-							(this.state.subindex + 1) % config.count;
+					const { index, frames, layouts } = this.state;
+					const [current, , focus] = index;
+					if (current === layout) {
+						this.state.index[1] =
+							(index[1] + 1) % layouts[layout].count;
 						this.updateLayout();
 						return;
 					}
-					const config = LAYOUT_CONFIG[layout];
-					if (focus >= config.panels) {
+					if (focus >= layouts[layout].panels) {
 						[frames[0], frames[focus]] = [frames[focus], frames[0]];
-						this.state.focus = 0;
+						this.state.index[2] = 0;
 					}
-					this.state.layout = layout;
-					this.state.subindex = 0;
+					this.state.index = [layout, 0, index[2]];
 					this.updateLayout();
 					this.render();
 				}
 				cycleFocus() {
-					const config = LAYOUT_CONFIG[this.state.layout];
-					if (config.panels > 1) {
-						this.state.focus =
-							(this.state.focus + 1) % config.panels;
+					const [current, , focus] = this.state.index;
+					const { layouts } = this.state;
+					if (layouts[current].panels > 1) {
+						this.state.index[2] =
+							(focus + 1) % layouts[current].panels;
 					}
 				}
 				cycleContent() {
-					const { layout, frames } = this.state;
-					const config = LAYOUT_CONFIG[layout];
-					if (!config.rotate) return;
-					this.state.frames = config.rotate.map((i) => frames[i]);
-					this.state.focus = (this.state.focus + 1) % config.panels;
+					const [current, , focus] = this.state.index;
+					const { frames, layouts } = this.state;
+					const cfg = layouts[current];
+					if (!cfg.rotate) return;
+					this.state.frames = cfg.rotate.map((i) => frames[i]);
+					this.state.index[2] = (focus + 1) % cfg.panels;
 					this.render();
 				}
 				navigate(delta) {
-					const { focus, frames } = this.state;
+					const [, , focus] = this.state.index;
+					const { frames } = this.state;
 					const max = this.totalFrames ?? 1000;
 					frames[focus] = (frames[focus] + delta + max) % max;
 					this.render([focus]);
 				}
 				updateLayout() {
-					const { layout, subindex } = this.state;
-					const config = LAYOUT_CONFIG[layout];
-					this.app.className = `layout-${layout}-${subindex}`;
+					const [current, subindex] = this.state.index;
+					const { layouts } = this.state;
+					this.app.className = `layout-${current}-${subindex}`;
 
 					for (let i = 0; i < this.panels.length; i++) {
 						const panel = this.panels[i];
-						const shouldShow = i < config.panels ? 'flex' : 'none';
+						const shouldShow =
+							i < layouts[current].panels ? 'flex' : 'none';
 						if (panel.style.display !== shouldShow) {
 							panel.style.display = shouldShow;
 						}
@@ -249,9 +238,10 @@
 					}
 				}
 				async render(indices) {
-					const config = LAYOUT_CONFIG[this.state.layout];
+					const [current] = this.state.index;
+					const { layouts } = this.state;
 					const panelsToRender = indices ?? [
-						...Array(config.panels).keys(),
+						...Array(layouts[current].panels).keys(),
 					];
 					await Promise.all(
 						panelsToRender.map(async (i) => {
