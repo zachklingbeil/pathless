@@ -120,6 +120,7 @@
 			class FrameViewer {
 				constructor(apiUrl) {
 					this.apiUrl = apiUrl;
+					window.apiUrl = apiUrl;
 					this.app = document.getElementById('app');
 					this.panels = Array.from(this.app.children);
 					this.totalFrames = null;
