@@ -66,13 +66,13 @@
 			.layout-1-0 {
 				grid-template: 1fr / 1fr 1fr;
 			}
-			.layout-1-0 .panel:first-child {
+			.layout-1-0 [data='0'] {
 				border-right: var(--border);
 			}
 			.layout-1-1 {
 				grid-template: 1fr 1fr / 1fr;
 			}
-			.layout-1-1 .panel:first-child {
+			.layout-1-1 [data='0'] {
 				border-bottom: var(--border);
 			}
 			.layout-2-0,
@@ -81,39 +81,39 @@
 			.layout-2-3 {
 				grid-template: 1fr 1fr / 1fr 1fr;
 			}
-			.layout-2-0 .panel:nth-child(1) {
+			.layout-2-0 [data='0'] {
 				grid-row: 1 / 3;
 				border-right: var(--border);
 			}
-			.layout-2-0 .panel:nth-child(2) {
+			.layout-2-0 [data='1'] {
 				border-bottom: var(--border);
 			}
-			.layout-2-1 .panel:nth-child(1) {
+			.layout-2-1 [data='0'] {
 				grid-column: 1 / 3;
 				border-bottom: var(--border);
 			}
-			.layout-2-1 .panel:nth-child(2) {
+			.layout-2-1 [data='1'] {
 				border-right: var(--border);
 				border-bottom: var(--border);
 			}
-			.layout-2-2 .panel:nth-child(1) {
+			.layout-2-2 [data='0'] {
 				grid-column: 1;
 				grid-row: 1;
 			}
-			.layout-2-2 .panel:nth-child(2) {
+			.layout-2-2 [data='1'] {
 				grid-column: 1;
 				grid-row: 2;
 				border-top: var(--border);
 			}
-			.layout-2-2 .panel:nth-child(3) {
+			.layout-2-2 [data='2'] {
 				grid-row: 1 / 3;
 				grid-column: 2;
 				border-left: var(--border);
 			}
-			.layout-2-3 .panel:nth-child(1) {
+			.layout-2-3 [data='0'] {
 				border-right: var(--border);
 			}
-			.layout-2-3 .panel:nth-child(3) {
+			.layout-2-3 [data='2'] {
 				grid-column: 1 / 3;
 				border-top: var(--border);
 			}
@@ -125,92 +125,69 @@
 					this.cache = new Map();
 					this.totalFrames = null;
 					this.app = document.getElementById('app');
-					this.panels = Array.from(this.app.children);
+					this.frames = [0, 0, 0];
+					this.layout = 0;
+					this.variant = 0;
+					this.focus = 0;
 					this.layouts = [
 						{ panels: 1, variants: 1, rotate: null },
 						{ panels: 2, variants: 2, rotate: [1, 0] },
 						{ panels: 3, variants: 4, rotate: [2, 0, 1] },
 					];
-					this.state = {
-						frames: [0, 0, 0],
-						index: [0, 0, 0], // [layout, variant, focus]
-					};
-					document.addEventListener('keydown', (e) => {
-						this.handleKey(e);
-						this.panelEvent(e);
-					});
+					document.addEventListener('keydown', (e) =>
+						this.handleKey(e)
+					);
 					this.setLayout(0);
 					this.render();
 				}
-				panelEvent(e) {
-					const [, , focus] = this.state.index;
-					this.panels[focus]?.dispatchEvent(
-						new CustomEvent('panelKey', { detail: e })
-					);
+				get config() {
+					return this.layouts[this.layout];
+				}
+				getPanel(index) {
+					return this.app.querySelector(`[data="${index}"]`);
+				}
+				getFocusedPanel() {
+					return this.getPanel(this.focus);
+				}
+				validateFrame(idx) {
+					return typeof idx === 'number' && !isNaN(idx) ? idx : 0;
+				}
+				cycleFocus() {
+					this.focus = (this.focus + 1) % this.config.panels;
+				}
+				rotateFrames() {
+					if (this.config.rotate) {
+						this.frames = this.config.rotate.map((i) =>
+							this.validateFrame(this.frames[i])
+						);
+						this.cycleFocus();
+						this.render();
+					}
 				}
 				handleKey(e) {
 					const actions = {
 						1: () => this.setLayout(0),
 						2: () => this.setLayout(1),
 						3: () => this.setLayout(2),
-						4: () => this.cycle('content'),
-						Tab: () => (e.preventDefault(), this.cycle('focus')),
+						4: () => this.rotateFrames(),
+						Tab: () => (e.preventDefault(), this.cycleFocus()),
 						e: () => this.navigate(1),
 						q: () => this.navigate(-1),
 					};
-					actions[e.key]?.();
-				}
-				setLayout(layout) {
-					const { index, frames } = this.state;
-					const [current, , focus] = index;
-					const config = this.layouts[layout];
-					const layoutChanged = current !== layout;
-					if (!layoutChanged) {
-						this.state.index[1] = (index[1] + 1) % config.variants;
-					} else {
-						if (focus >= config.panels) {
-							[frames[0], frames[focus]] = [
-								frames[focus],
-								frames[0],
-							];
-							this.state.index[2] = 0;
-						}
-						this.state.index = [layout, 0, this.state.index[2]];
-					}
-					this.updateLayoutDOM();
-					if (layoutChanged) {
-						this.render();
-					}
-				}
-				updateLayoutDOM() {
-					const [layout, variant] = this.state.index;
-					const config = this.layouts[layout];
-					this.app.className = `layout-${layout}-${variant}`;
-					this.panels.forEach((panel, i) => {
-						const shouldShow = i < config.panels ? 'flex' : 'none';
-						if (panel.style.display !== shouldShow) {
-							panel.style.display = shouldShow;
-						}
-					});
-				}
-				cycle(type) {
-					const [current, , focus] = this.state.index;
-					const { frames } = this.state;
-					const config = this.layouts[current];
-					if (type === 'focus' && config.panels > 1) {
-						this.state.index[2] = (focus + 1) % config.panels;
-					} else if (type === 'content' && config.rotate) {
-						this.state.frames = config.rotate.map((i) => frames[i]);
-						this.state.index[2] = (focus + 1) % config.panels;
-						this.render();
+					const action = actions[e.key];
+					if (action) {
+						action();
+						this.getFocusedPanel()?.dispatchEvent(
+							new CustomEvent('panelKey', { detail: e })
+						);
 					}
 				}
 				navigate(delta) {
-					const [, , focus] = this.state.index;
 					const max = this.totalFrames ?? 1000;
-					this.state.frames[focus] =
-						(this.state.frames[focus] + delta + max) % max;
-					this.render([focus]);
+					this.frames[this.focus] = this.validateFrame(
+						(this.frames[this.focus] + delta + max) % max
+					);
+					this.render([this.focus]);
 				}
 				async fetchFrame(idx) {
 					if (this.cache.has(idx)) return this.cache.get(idx);
@@ -236,19 +213,74 @@
 					this.cache.set(idx, html);
 					return html;
 				}
+				setLayout(layout) {
+					const layoutChanged = this.layout !== layout;
+					if (!layoutChanged) {
+						this.variant =
+							(this.variant + 1) % this.config.variants;
+					} else {
+						if (this.focus >= this.layouts[layout].panels) {
+							[this.frames[0], this.frames[this.focus]] = [
+								this.frames[this.focus],
+								this.frames[0],
+							];
+							this.focus = 0;
+						}
+						this.layout = layout;
+						this.variant = 0;
+					}
+					this.updateLayoutDOM();
+					if (layoutChanged) {
+						this.render();
+					}
+				}
+				updateLayoutDOM() {
+					this.app.className = `layout-${this.layout}-${this.variant}`;
+					for (let i = 0; i < 3; i++) {
+						const panel = this.getPanel(i);
+						panel.style.display =
+							i < this.config.panels ? 'flex' : 'none';
+					}
+				}
+				async renderPanel(panelIndex) {
+					const panel = this.getPanel(panelIndex);
+					const frameIndex = this.validateFrame(
+						this.frames[panelIndex]
+					);
+					const state = this.extractPanelState(panel);
+					panel.innerHTML = await this.fetchFrame(frameIndex);
+					this.executeScripts(panel);
+					this.restorePanelState(panel, state);
+				}
+
+				extractPanelState(panel) {
+					const state = {};
+					for (const key in panel) {
+						if (
+							panel.hasOwnProperty(key) &&
+							typeof panel[key] !== 'function' &&
+							!key.startsWith('_') &&
+							key !== 'innerHTML' &&
+							key !== 'outerHTML'
+						) {
+							state[key] = panel[key];
+						}
+					}
+					return state;
+				}
+				restorePanelState(panel, state) {
+					for (const key in state) {
+						if (!panel.hasOwnProperty(key)) {
+							panel[key] = state[key];
+						}
+					}
+				}
 				async render(indices) {
-					const config = this.layouts[this.state.index[0]];
 					const panelsToRender = indices ?? [
-						...Array(config.panels).keys(),
+						...Array(this.config.panels).keys(),
 					];
 					await Promise.all(
-						panelsToRender.map(async (i) => {
-							const panel = this.panels[i];
-							panel.innerHTML = await this.fetchFrame(
-								this.state.frames[i]
-							);
-							this.executeScripts(panel);
-						})
+						panelsToRender.map((i) => this.renderPanel(i))
 					);
 				}
 				executeScripts(panel) {
@@ -269,9 +301,9 @@
 	</head>
 	<body>
 		<div id="app">
-			<div class="panel"></div>
-			<div class="panel"></div>
-			<div class="panel"></div>
+			<div class="panel" data="0"></div>
+			<div class="panel" data="1"></div>
+			<div class="panel" data="2"></div>
 		</div>
 	</body>
 </html>
