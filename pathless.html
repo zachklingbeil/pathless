@@ -177,10 +177,10 @@
 					const action = actions[e.key];
 					if (action) {
 						action();
-						this.getFocusedPanel()?.dispatchEvent(
-							new CustomEvent('panelKey', { detail: e })
-						);
 					}
+					this.getFocusedPanel()?.dispatchEvent(
+						new CustomEvent('panelKey', { detail: e })
+					);
 				}
 				navigate(delta) {
 					const max = this.totalFrames ?? 1000;
