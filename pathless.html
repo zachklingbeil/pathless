@@ -247,33 +247,8 @@
 					const frameIndex = this.validateFrame(
 						this.frames[panelIndex]
 					);
-					const state = this.extractPanelState(panel);
 					panel.innerHTML = await this.fetchFrame(frameIndex);
 					this.executeScripts(panel);
-					this.restorePanelState(panel, state);
-				}
-
-				extractPanelState(panel) {
-					const state = {};
-					for (const key in panel) {
-						if (
-							panel.hasOwnProperty(key) &&
-							typeof panel[key] !== 'function' &&
-							!key.startsWith('_') &&
-							key !== 'innerHTML' &&
-							key !== 'outerHTML'
-						) {
-							state[key] = panel[key];
-						}
-					}
-					return state;
-				}
-				restorePanelState(panel, state) {
-					for (const key in state) {
-						if (!panel.hasOwnProperty(key)) {
-							panel[key] = state[key];
-						}
-					}
 				}
 				async render(indices) {
 					const panelsToRender = indices ?? [
