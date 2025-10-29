@@ -122,10 +122,15 @@
 			class FrameViewer {
 				constructor(apiUrl) {
 					window.apiUrl = apiUrl;
-					this.cache = new Map();
-					this.totalFrames = null;
+					this.frames = [null, []];
 					this.app = document.getElementById('app');
-					this.frames = [0, 0, 0];
+					this.panels = Array.from(
+						this.app.children,
+						(element, i) => ({
+							frameIndex: 0,
+							element,
+						})
+					);
 					this.layout = 0;
 					this.variant = 0;
 					this.focus = 0;
@@ -140,30 +145,6 @@
 					this.setLayout(0);
 					this.render();
 				}
-				get config() {
-					return this.layouts[this.layout];
-				}
-				getPanel(index) {
-					return this.app.children[index];
-				}
-				getFocusedPanel() {
-					return this.getPanel(this.focus);
-				}
-				validateFrame(idx) {
-					return typeof idx === 'number' && !isNaN(idx) ? idx : 0;
-				}
-				cycleFocus() {
-					this.focus = (this.focus + 1) % this.config.panels;
-				}
-				rotateFrames() {
-					if (this.config.rotate) {
-						this.frames = this.config.rotate.map((i) =>
-							this.validateFrame(this.frames[i])
-						);
-						this.cycleFocus();
-						this.render();
-					}
-				}
 				handleKey(e) {
 					const actions = {
 						1: () => this.setLayout(0),
@@ -174,98 +155,114 @@
 						e: () => this.navigate(1),
 						q: () => this.navigate(-1),
 					};
-					const action = actions[e.key];
-					if (action) {
-						action();
-					}
-					this.getFocusedPanel()?.dispatchEvent(
+					if (actions[e.key]) actions[e.key]();
+					this.panels[this.focus]?.element.dispatchEvent(
 						new CustomEvent('panelKey', { detail: e })
 					);
 				}
 				navigate(delta) {
-					const max = this.totalFrames ?? 1000;
-					this.frames[this.focus] = this.validateFrame(
-						(this.frames[this.focus] + delta + max) % max
-					);
+					const panel = this.panels[this.focus];
+					const max = this.frames[0] ?? 1000;
+					panel.frameIndex = (panel.frameIndex + delta + max) % max;
 					this.render([this.focus]);
 				}
+				cycleFocus() {
+					this.focus =
+						(this.focus + 1) % this.layouts[this.layout].panels;
+				}
+				rotateFrames() {
+					const { rotate } = this.layouts[this.layout];
+					if (!rotate) return;
+
+					const rotated = rotate.map(
+						(i) => this.panels[i].frameIndex
+					);
+					rotated.forEach((frameIndex, i) => {
+						this.panels[i].frameIndex = frameIndex;
+					});
+					this.cycleFocus();
+					this.render();
+				}
 				async fetchFrame(idx) {
-					if (this.cache.has(idx)) return this.cache.get(idx);
-					let html;
+					if (this.frames[1][idx]) return this.frames[1][idx];
+
 					if (!window.apiUrl) {
-						html = '<div>No API URL configured</div>';
-					} else {
-						try {
-							const res = await fetch(window.apiUrl, {
-								headers: { 'X-Frame': idx.toString() },
-							});
-							if (!res.ok) throw new Error(`HTTP ${res.status}`);
-							const total = res.headers.get('X-Index');
-							if (total && !this.totalFrames) {
-								this.totalFrames = parseInt(total);
-							}
-							html = await res.text();
-						} catch (err) {
-							console.error(`Failed to fetch frame ${idx}:`, err);
-							html = `<div>Error loading frame ${idx}</div>`;
-						}
+						return (this.frames[1][idx] =
+							'<div>No API URL configured</div>');
 					}
-					this.cache.set(idx, html);
-					return html;
+					try {
+						const res = await fetch(window.apiUrl, {
+							headers: { 'X-Frame': idx.toString() },
+						});
+						if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+						const total = res.headers.get('X-Index');
+						if (total && !this.frames[0]) {
+							this.frames[0] = parseInt(total);
+						}
+						return (this.frames[1][idx] = await res.text());
+					} catch (err) {
+						console.error(`Failed to fetch frame ${idx}:`, err);
+						return (this.frames[1][
+							idx
+						] = `<div>Error loading frame ${idx}</div>`);
+					}
 				}
 				setLayout(layout) {
 					const layoutChanged = this.layout !== layout;
-					if (!layoutChanged) {
-						this.variant =
-							(this.variant + 1) % this.config.variants;
-					} else {
+					if (layoutChanged) {
 						if (this.focus >= this.layouts[layout].panels) {
-							[this.frames[0], this.frames[this.focus]] = [
-								this.frames[this.focus],
-								this.frames[0],
+							[
+								this.panels[0].frameIndex,
+								this.panels[this.focus].frameIndex,
+							] = [
+								this.panels[this.focus].frameIndex,
+								this.panels[0].frameIndex,
 							];
 							this.focus = 0;
 						}
 						this.layout = layout;
 						this.variant = 0;
+					} else {
+						this.variant =
+							(this.variant + 1) %
+							this.layouts[this.layout].variants;
 					}
-					this.updateLayoutDOM();
-					if (layoutChanged) {
-						this.render();
-					}
-				}
-				updateLayoutDOM() {
 					this.app.className = `layout-${this.layout}-${this.variant}`;
-					for (let i = 0; i < 3; i++) {
-						const panel = this.getPanel(i);
-						panel.style.display =
-							i < this.config.panels ? 'flex' : 'none';
-					}
-				}
-				async renderPanel(panelIndex) {
-					const panel = this.getPanel(panelIndex);
-					const frameIndex = this.validateFrame(
-						this.frames[panelIndex]
-					);
-					panel.innerHTML = await this.fetchFrame(frameIndex);
-					this.executeScripts(panel);
+					this.panels.forEach((panel, i) => {
+						panel.element.style.display =
+							i < this.layouts[this.layout].panels
+								? 'flex'
+								: 'none';
+					});
+					if (layoutChanged) this.render();
 				}
 				async render(indices) {
-					const panelsToRender = indices ?? [
-						...Array(this.config.panels).keys(),
+					const toRender = indices ?? [
+						...Array(this.layouts[this.layout].panels).keys(),
 					];
 					await Promise.all(
-						panelsToRender.map((i) => this.renderPanel(i))
+						toRender.map(async (i) => {
+							const panel = this.panels[i];
+							panel.element.innerHTML = await this.fetchFrame(
+								panel.frameIndex
+							);
+							panel.element
+								.querySelectorAll('script')
+								.forEach((s) => {
+									try {
+										new Function('panel', s.textContent)(
+											panel.element
+										);
+									} catch (e) {
+										console.error(
+											'Script execution error:',
+											e
+										);
+									}
+								});
+						})
 					);
-				}
-				executeScripts(panel) {
-					panel.querySelectorAll('script').forEach((s) => {
-						try {
-							new Function('panel', s.textContent)(panel);
-						} catch (e) {
-							console.error('Script execution error:', e);
-						}
-					});
 				}
 			}
 			document.addEventListener(
