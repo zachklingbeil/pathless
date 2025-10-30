@@ -121,129 +121,260 @@
 			}
 		</style>
 		<script>
-			class FrameSource {
+			class App {
 				constructor(apiUrl) {
+					this.app = document.getElementById('app');
+					this.panels = [
+						document.getElementById('zero'),
+						document.getElementById('one'),
+						document.getElementById('two'),
+					];
 					window.apiUrl = apiUrl;
-					this.totalFrames = null;
 					this.frames = new Map();
-					this.pendingRequests = new Map();
+					this.frameSource = new FrameSource(apiUrl, this.frames);
+					this.layoutManager = new LayoutManager(
+						this.app,
+						this.panels
+					);
+					this.panelFrames = [0, 0, 0];
+
+					document.addEventListener('keydown', (e) =>
+						this.handleKey(e)
+					);
+					this.renderAll();
 				}
+
+				async renderAll() {
+					const visibleCount =
+						this.layoutManager.layouts[this.layoutManager.layout[0]]
+							.panels;
+					const visiblePanels = this.panels.slice(0, visibleCount);
+					const visibleFrames = this.panelFrames.slice(
+						0,
+						visibleCount
+					);
+					await this.frameSource.renderFrames(
+						visiblePanels,
+						visibleFrames
+					);
+				}
+
+				async navigate(delta) {
+					const focusedIdx = this.layoutManager.focus;
+					const currentFrame = this.panelFrames[focusedIdx];
+					const newFrame = this.frameSource.getNextFrame(
+						currentFrame,
+						delta
+					);
+
+					this.panelFrames[focusedIdx] = newFrame;
+					await this.frameSource.renderFrame(
+						this.panels[focusedIdx],
+						newFrame
+					);
+				}
+
+				changeLayout(targetLayout) {
+					if (this.layoutManager.isFullscreen) {
+						this.layoutManager.toggleFullscreen();
+					}
+					this.layoutManager.setLayout(targetLayout);
+				}
+				handleKey(e) {
+					const keyMap = {
+						e: () => this.navigate(1),
+						q: () => this.navigate(-1),
+						1: () => this.layoutManager.toggleFullscreen(),
+						2: () => this.changeLayout(1),
+						3: () => this.changeLayout(2),
+						Tab: () => this.layoutManager.cycleFocus(),
+					};
+					const handler = keyMap[e.key];
+					if (handler) {
+						e.preventDefault();
+						handler();
+					}
+					this.panels[this.layoutManager.focus]?.dispatchEvent(
+						new CustomEvent('panelKey', { detail: e })
+					);
+				}
+			}
+
+			class FrameSource {
+				constructor(apiUrl, framesCache) {
+					this.apiUrl = apiUrl;
+					this.framesCache = framesCache;
+					this.totalFrames = null;
+					this.pending = new Map();
+				}
+
+				getNextFrame(currentFrame, delta) {
+					const total = this.totalFrames || 1;
+					return (((currentFrame + delta) % total) + total) % total;
+				}
+
 				async fetchFrame(idx) {
-					// Return cached frame if available
-					if (this.frames.has(idx)) {
-						return this.frames.get(idx);
+					if (this.framesCache.has(idx)) {
+						return this.framesCache.get(idx);
 					}
-					// Return pending request to avoid duplicate fetches
-					if (this.pendingRequests.has(idx)) {
-						return this.pendingRequests.get(idx);
+
+					if (this.pending.has(idx)) {
+						return this.pending.get(idx);
 					}
-					// Ensure we have total frames metadata
+
 					if (this.totalFrames === null && idx !== 0) {
 						await this.fetchFrame(0);
 					}
-					// Validate API URL
-					if (!window.apiUrl) {
-						const errorContent = '<div>No API URL configured</div>';
-						this.frames.set(idx, errorContent);
-						return errorContent;
+
+					if (!this.apiUrl) {
+						const error = '<div>No API URL configured</div>';
+						this.framesCache.set(idx, error);
+						return error;
 					}
-					// Create and cache the fetch promise
+
 					const fetchPromise = this._performFetch(idx);
-					this.pendingRequests.set(idx, fetchPromise);
+					this.pending.set(idx, fetchPromise);
+
 					try {
 						const content = await fetchPromise;
-						this.frames.set(idx, content);
+						this.framesCache.set(idx, content);
 						return content;
 					} finally {
-						this.pendingRequests.delete(idx);
+						this.pending.delete(idx);
 					}
 				}
+
 				async _performFetch(idx) {
 					try {
-						const res = await fetch(window.apiUrl, {
-							headers: { 'X-Frame': String(idx) },
-						});
+						const res =
+							idx === 0
+								? await fetch(this.apiUrl)
+								: await fetch(this.apiUrl, {
+										headers: { 'X-Frame': String(idx) },
+								  });
+
 						if (!res.ok) {
 							throw new Error(`HTTP ${res.status}`);
 						}
-						// Parse total frames from first successful response
+
 						if (this.totalFrames === null) {
 							const total = res.headers.get('X-Total-Frames');
 							if (total) {
 								this.totalFrames = parseInt(total, 10);
 							}
 						}
+
 						return await res.text();
 					} catch (err) {
 						console.error(`Failed to fetch frame ${idx}:`, err);
 						return `<div>Error loading frame ${idx}</div>`;
 					}
 				}
+
+				async renderFrame(panelElement, frameIdx) {
+					const content = await this.fetchFrame(frameIdx);
+					panelElement.innerHTML = content;
+				}
+
+				async renderFrames(panelElements, frameIndices) {
+					await Promise.all(
+						panelElements.map((panel, i) =>
+							this.renderFrame(panel, frameIndices[i])
+						)
+					);
+				}
 			}
+
 			class LayoutManager {
-				constructor() {
-					this.app = document.getElementById('app');
-					this.zero = document.getElementById('zero');
-					this.one = document.getElementById('one');
-					this.two = document.getElementById('two');
-					this.panels = [this.zero, this.one, this.two];
-					this.layout = 0;
-					this.variant = 0;
+				constructor(app, panels) {
+					this.app = app;
+					this.panels = panels;
+					this.layout = [0, 0];
 					this.focus = 0;
+					this.isFullscreen = false;
+					this.savedLayout = null;
+					this.savedFocusedIdx = null;
 					this.layouts = [
 						{ panels: 1, variants: 1 },
 						{ panels: 2, variants: 2 },
 						{ panels: 3, variants: 4 },
 					];
-					document.addEventListener('keydown', (e) =>
-						this.handleKey(e)
-					);
-					this.setLayout(0);
+					this.render();
 				}
-				getFocusedPanel() {
-					return this.panels[this.focus];
-				}
-				getVisiblePanels() {
-					return this.panels.slice(
-						0,
-						this.layouts[this.layout].panels
-					);
-				}
+
 				cycleFocus() {
 					this.focus =
-						(this.focus + 1) % this.layouts[this.layout].panels;
+						(this.focus + 1) % this.layouts[this.layout[0]].panels;
+					this.renderFocus();
 				}
-				setLayout(layout) {
-					const layoutChanged = this.layout !== layout;
-					const currentLayout = this.layouts[layout];
+
+				toggleFullscreen() {
+					if (this.isFullscreen) {
+						this.isFullscreen = false;
+						this.layout = this.savedLayout;
+						this.render();
+					} else {
+						this.savedLayout = [...this.layout];
+						this.savedFocusedIdx = this.focus;
+						this.isFullscreen = true;
+						this.layout = [0, 0];
+						this.render();
+						this.panels.forEach((panel, i) => {
+							if (i !== this.savedFocusedIdx) {
+								panel.style.display = 'none';
+							}
+						});
+					}
+				}
+
+				setLayout(layoutIndex) {
+					const layoutChanged = this.layout[0] !== layoutIndex;
+					const currentLayout = this.layouts[layoutIndex];
+
 					if (layoutChanged) {
 						if (this.focus >= currentLayout.panels) {
 							this.focus = 0;
 						}
-						this.layout = layout;
-						this.variant = 0;
+						this.layout = [layoutIndex, 0];
 					} else {
-						this.variant =
-							(this.variant + 1) % currentLayout.variants;
+						this.layout[1] =
+							(this.layout[1] + 1) % currentLayout.variants;
 					}
-					this.app.className = `layout-${this.layout}-${this.variant}`;
+
+					this.render();
+				}
+
+				render() {
+					this.renderLayout();
+					this.renderFocus();
+				}
+
+				renderLayout() {
+					const currentLayout = this.layouts[this.layout[0]];
+					this.app.className = `layout-${this.layout[0]}-${this.layout[1]}`;
+
 					this.panels.forEach((panel, i) => {
 						panel.style.display =
 							i < currentLayout.panels ? 'flex' : 'none';
 					});
 				}
+
+				renderFocus() {
+					this.panels.forEach((panel, i) => {
+						panel.classList.toggle('focused', i === this.focus);
+					});
+				}
 			}
-			document.addEventListener(
-				'DOMContentLoaded',
-				() => new LayoutManager()
-			);
+			document.addEventListener('DOMContentLoaded', () => {
+				new App('{{.APIURL}}');
+			});
 		</script>
 	</head>
 	<body>
 		<div id="app">
-			<div id="zero" class="panel">zero</div>
-			<div id="one" class="panel">one</div>
-			<div id="two" class="panel">two</div>
+			<div id="zero" class="panel"></div>
+			<div id="one" class="panel"></div>
+			<div id="two" class="panel"></div>
 		</div>
 	</body>
 </html>
