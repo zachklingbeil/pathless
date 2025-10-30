@@ -281,7 +281,7 @@
 						}
 
 						if (this.totalFrames === null) {
-							const total = res.headers.get('X-Total-Frames');
+							const total = res.headers.get('X-Frames');
 							if (total) {
 								this.totalFrames = parseInt(total, 10);
 							}
@@ -344,6 +344,7 @@
 					panelElement.innerHTML = content;
 					panelElement.__frameState = state;
 					panelElement.__frameSource = this;
+					panelElement.__frameIndex = frameIdx;
 
 					const scripts = panelElement.querySelectorAll('script');
 					scripts.forEach((oldScript) => {
