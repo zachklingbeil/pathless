@@ -123,20 +123,15 @@
 		<script>
 			class App {
 				constructor(apiUrl) {
-					this.app = document.getElementById('app');
-					this.panels = [
-						document.getElementById('zero'),
-						document.getElementById('one'),
-						document.getElementById('two'),
-					];
-					window.apiUrl = apiUrl;
-					this.frames = new Map();
-					this.frameSource = new FrameSource(apiUrl, this.frames);
 					this.layoutManager = new LayoutManager(
-						this.app,
-						this.panels
+						document.getElementById('app'),
+						[
+							document.getElementById('zero'),
+							document.getElementById('one'),
+							document.getElementById('two'),
+						]
 					);
-					this.panelFrames = [0, 0, 0];
+					this.frameSource = new FrameSource(apiUrl);
 
 					document.addEventListener('keydown', (e) =>
 						this.handleKey(e)
@@ -145,31 +140,28 @@
 				}
 
 				async renderAll() {
-					const visibleCount =
-						this.layoutManager.layouts[this.layoutManager.layout[0]]
-							.panels;
-					const visiblePanels = this.panels.slice(0, visibleCount);
-					const visibleFrames = this.panelFrames.slice(
-						0,
-						visibleCount
+					const panels = this.layoutManager.getVisiblePanels();
+					const frames = this.frameSource.getVisibleFrames(
+						panels.length
 					);
-					await this.frameSource.renderFrames(
-						visiblePanels,
-						visibleFrames
+
+					await Promise.all(
+						panels.map((panel, i) =>
+							this.frameSource.render(panel, frames[i])
+						)
 					);
 				}
 
 				async navigate(delta) {
-					const focusedIdx = this.layoutManager.focus;
-					const currentFrame = this.panelFrames[focusedIdx];
-					const newFrame = this.frameSource.getNextFrame(
-						currentFrame,
-						delta
-					);
+					const total = this.frameSource.totalFrames || 1;
+					const idx = this.layoutManager.focus;
+					const current = this.frameSource.panelFrames[idx];
+					const newFrame =
+						(((current + delta) % total) + total) % total;
 
-					this.panelFrames[focusedIdx] = newFrame;
-					await this.frameSource.renderFrame(
-						this.panels[focusedIdx],
+					this.frameSource.setFrame(idx, newFrame);
+					await this.frameSource.render(
+						this.layoutManager.getFocusedPanel(),
 						newFrame
 					);
 				}
@@ -180,6 +172,7 @@
 					}
 					this.layoutManager.setLayout(targetLayout);
 				}
+
 				handleKey(e) {
 					const keyMap = {
 						e: () => this.navigate(1),
@@ -194,28 +187,34 @@
 						e.preventDefault();
 						handler();
 					}
-					this.panels[this.layoutManager.focus]?.dispatchEvent(
-						new CustomEvent('panelKey', { detail: e })
-					);
+					this.layoutManager
+						.getFocusedPanel()
+						?.dispatchEvent(
+							new CustomEvent('panelKey', { detail: e })
+						);
 				}
 			}
 
 			class FrameSource {
-				constructor(apiUrl, framesCache) {
+				constructor(apiUrl) {
 					this.apiUrl = apiUrl;
-					this.framesCache = framesCache;
+					this.frames = new Map();
+					this.panelFrames = [0, 0, 0];
 					this.totalFrames = null;
 					this.pending = new Map();
 				}
 
-				getNextFrame(currentFrame, delta) {
-					const total = this.totalFrames || 1;
-					return (((currentFrame + delta) % total) + total) % total;
+				setFrame(panelIdx, frameIdx) {
+					this.panelFrames[panelIdx] = frameIdx;
+				}
+
+				getVisibleFrames(count) {
+					return this.panelFrames.slice(0, count);
 				}
 
 				async fetchFrame(idx) {
-					if (this.framesCache.has(idx)) {
-						return this.framesCache.get(idx);
+					if (this.frames.has(idx)) {
+						return this.frames.get(idx);
 					}
 
 					if (this.pending.has(idx)) {
@@ -228,7 +227,7 @@
 
 					if (!this.apiUrl) {
 						const error = '<div>No API URL configured</div>';
-						this.framesCache.set(idx, error);
+						this.frames.set(idx, error);
 						return error;
 					}
 
@@ -237,7 +236,7 @@
 
 					try {
 						const content = await fetchPromise;
-						this.framesCache.set(idx, content);
+						this.frames.set(idx, content);
 						return content;
 					} finally {
 						this.pending.delete(idx);
@@ -271,17 +270,18 @@
 					}
 				}
 
-				async renderFrame(panelElement, frameIdx) {
+				async render(panelElement, frameIdx) {
 					const content = await this.fetchFrame(frameIdx);
 					panelElement.innerHTML = content;
-				}
-
-				async renderFrames(panelElements, frameIndices) {
-					await Promise.all(
-						panelElements.map((panel, i) =>
-							this.renderFrame(panel, frameIndices[i])
-						)
-					);
+					const scripts = panelElement.querySelectorAll('script');
+					scripts.forEach((oldScript) => {
+						const newScript = document.createElement('script');
+						Array.from(oldScript.attributes).forEach((attr) => {
+							newScript.setAttribute(attr.name, attr.value);
+						});
+						newScript.textContent = oldScript.textContent;
+						oldScript.parentNode.replaceChild(newScript, oldScript);
+					});
 				}
 			}
 
@@ -302,9 +302,20 @@
 					this.render();
 				}
 
+				getVisibleCount() {
+					return this.layouts[this.layout[0]].panels;
+				}
+
+				getVisiblePanels() {
+					return this.panels.slice(0, this.getVisibleCount());
+				}
+
+				getFocusedPanel() {
+					return this.panels[this.focus];
+				}
+
 				cycleFocus() {
-					this.focus =
-						(this.focus + 1) % this.layouts[this.layout[0]].panels;
+					this.focus = (this.focus + 1) % this.getVisibleCount();
 					this.renderFocus();
 				}
 
@@ -365,6 +376,7 @@
 					});
 				}
 			}
+
 			document.addEventListener('DOMContentLoaded', () => {
 				new App('{{.APIURL}}');
 			});
