@@ -37,14 +37,6 @@
 				text-decoration: underline;
 				text-align: center;
 			}
-			/* img {
-				max-width: 100%;
-				max-height: 90%;
-				width: auto;
-				height: auto;
-				display: block;
-				object-fit: contain;
-			} */
 			#app {
 				height: 100vh;
 				display: grid;
@@ -158,7 +150,7 @@
 				}
 
 				handleKey(e) {
-					const keyMap = {
+					const actions = {
 						e: () => this.navigate(1),
 						q: () => this.navigate(-1),
 						1: () => this.layoutManager.toggleFullscreen(),
@@ -170,29 +162,20 @@
 							this.layoutManager.changeLayout(2);
 							this.renderAll();
 						},
-						Tab: () => this.layoutManager.cycleFocus(),
-						r: () => this.resetAllPanels(),
+						Tab: () => (
+							e.preventDefault(), this.layoutManager.cycleFocus()
+						),
 					};
 
-					const handler = keyMap[e.key];
-					if (handler) {
-						e.preventDefault();
-						handler();
-					}
-
-					this.layoutManager
-						.getFocusedPanel()
-						?.dispatchEvent(
-							new CustomEvent('panelKey', { detail: e })
+					if (actions[e.key]) actions[e.key]();
+					const focusedPanel = this.layoutManager.getFocusedPanel();
+					if (focusedPanel) {
+						focusedPanel.dispatchEvent(
+							new CustomEvent('panelKey', {
+								detail: { key: e.key },
+							})
 						);
-				}
-
-				resetAllPanels() {
-					this.layoutManager.panels.forEach((panel) => {
-						this.panelFrames.set(panel, 0);
-						this.frameSource.clearPanelState(panel);
-					});
-					this.renderAll();
+					}
 				}
 			}
 
@@ -204,19 +187,36 @@
 				}
 
 				async fetchFrame(idx) {
+					// Return cached or pending
 					if (this.frames.has(idx)) return this.frames.get(idx);
 					if (this.pending.has(idx)) return this.pending.get(idx);
 
-					if (this.totalFrames === null && idx !== 0)
+					// Ensure frame 0 is fetched first to get totalFrames
+					if (this.totalFrames === null && idx !== 0) {
 						await this.fetchFrame(0);
-
-					if (!window.apiUrl) {
-						const error = '<div>No API URL configured</div>';
-						this.frames.set(idx, error);
-						return error;
 					}
 
-					const fetchPromise = this._fetch(idx);
+					// Create and cache fetch promise
+					const fetchPromise = fetch(window.apiUrl, {
+						headers: idx === 0 ? {} : { 'X-Frame': String(idx) },
+					})
+						.then(async (res) => {
+							if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+							// Extract total frames from first response
+							if (this.totalFrames === null) {
+								const total = res.headers.get('X-Frames');
+								if (total)
+									this.totalFrames = parseInt(total, 10);
+							}
+
+							return res.text();
+						})
+						.catch((err) => {
+							console.error(`Failed to fetch frame ${idx}:`, err);
+							return `<div>Error loading frame ${idx}</div>`;
+						});
+
 					this.pending.set(idx, fetchPromise);
 
 					try {
@@ -228,57 +228,27 @@
 					}
 				}
 
-				async _fetch(idx) {
-					try {
-						const res = await fetch(window.apiUrl, {
-							headers:
-								idx === 0 ? {} : { 'X-Frame': String(idx) },
-						});
-
-						if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-						if (this.totalFrames === null) {
-							const total = res.headers.get('X-Frames');
-							if (total) this.totalFrames = parseInt(total, 10);
-						}
-
-						return await res.text();
-					} catch (err) {
-						console.error(`Failed to fetch frame ${idx}:`, err);
-						return `<div>Error loading frame ${idx}</div>`;
-					}
-				}
-
 				async fetchData(key, url) {
 					const dataKey = `__data_${key}`;
-
-					// Return cached data if already fetched (shared across all panels)
+					// Return cached or pending
 					if (this.frames.has(dataKey))
 						return this.frames.get(dataKey);
-
-					// Return pending promise if currently fetching (prevents duplicate requests)
 					if (this.pending.has(dataKey))
 						return this.pending.get(dataKey);
-
-					// Fetch and cache globally
 					const promise = fetch(url)
 						.then(async (res) => {
-							if (!res.ok)
-								return Promise.reject(`HTTP ${res.status}`);
-
+							if (!res.ok) throw new Error(`HTTP ${res.status}`);
 							const contentType = res.headers.get('content-type');
-
 							// Handle images - return blob URL
 							if (contentType?.startsWith('image/')) {
 								const blob = await res.blob();
 								return URL.createObjectURL(blob);
 							}
-
 							// Handle JSON
 							return res.json();
 						})
 						.then((data) => {
-							this.frames.set(dataKey, data); // Cache globally for all panels
+							this.frames.set(dataKey, data);
 							return data;
 						})
 						.catch((err) => {
@@ -320,20 +290,6 @@
 						new CustomEvent('frameRendered', {
 							detail: { frameIdx },
 						})
-					);
-				}
-
-				waitForImages(element) {
-					const images = Array.from(element.querySelectorAll('img'));
-					return Promise.all(
-						images.map((img) =>
-							img.complete
-								? Promise.resolve()
-								: new Promise((resolve) => {
-										img.addEventListener('load', resolve);
-										img.addEventListener('error', resolve);
-								  })
-						)
 					);
 				}
 
@@ -385,16 +341,6 @@
 					return element.closest('.panel');
 				}
 
-				getPanelIndex(panel) {
-					return this.panels.indexOf(panel);
-				}
-
-				cycleFocus() {
-					if (this.isFullscreen) return;
-					this.focus = (this.focus + 1) % this.getVisibleCount();
-					this._renderFocus();
-				}
-
 				changeLayout(targetLayout) {
 					if (this.isFullscreen) {
 						this.toggleFullscreen();
@@ -404,34 +350,24 @@
 
 				toggleFullscreen() {
 					if (this.isFullscreen) {
-						this._exitFullscreen();
+						this.isFullscreen = false;
+						this.layout = this.savedState.layout;
+						this.focus = this.savedState.focus;
+						this.savedState = null;
+						this.render();
 					} else {
-						this._enterFullscreen();
+						this.savedState = {
+							layout: [...this.layout],
+							focus: this.focus,
+						};
+						this.isFullscreen = true;
+						this.layout = [0, 0];
+						this.render();
+						this.panels.forEach((panel, i) => {
+							panel.style.display =
+								i === this.savedState.focus ? 'flex' : 'none';
+						});
 					}
-				}
-
-				_enterFullscreen() {
-					this.savedState = {
-						layout: [...this.layout],
-						focus: this.focus,
-					};
-					this.isFullscreen = true;
-					this.layout = [0, 0];
-					this.render();
-
-					// Show only focused panel
-					this.panels.forEach((panel, i) => {
-						panel.style.display =
-							i === this.savedState.focus ? 'flex' : 'none';
-					});
-				}
-
-				_exitFullscreen() {
-					this.isFullscreen = false;
-					this.layout = this.savedState.layout;
-					this.focus = this.savedState.focus;
-					this.savedState = null;
-					this.render();
 				}
 
 				setLayout(layoutIndex) {
@@ -453,24 +389,18 @@
 					this.render();
 				}
 
-				render() {
-					this._renderLayout();
-					this._renderFocus();
+				cycleFocus() {
+					if (this.isFullscreen) return;
+					this.focus = (this.focus + 1) % this.getVisibleCount();
 				}
 
-				_renderLayout() {
+				render() {
 					const visibleCount = this.getVisibleCount();
 					this.app.className = `layout-${this.layout[0]}-${this.layout[1]}`;
 
 					this.panels.forEach((panel, i) => {
 						panel.style.display =
 							i < visibleCount ? 'flex' : 'none';
-					});
-				}
-
-				_renderFocus() {
-					this.panels.forEach((panel, i) => {
-						panel.classList.toggle('focused', i === this.focus);
 					});
 				}
 			}
@@ -489,8 +419,6 @@
 						window.app.frameSource.getPanelState(panel),
 					setState: (panel, key, value) =>
 						window.app.frameSource.setPanelState(panel, key, value),
-					waitForImages: (element) =>
-						window.app.frameSource.waitForImages(element),
 					fetchData: (key, url) =>
 						window.app.frameSource.fetchData(key, url),
 					getData: (key) => window.app.frameSource.getData(key),
