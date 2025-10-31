@@ -115,12 +115,12 @@
 		<script>
 			window.apiUrl = '{{.APIURL}}';
 
-			class App {
+			class One {
 				constructor() {
-					this.layoutManager = new LayoutManager();
-					this.frameSource = new FrameSource();
-					this.panelFrames = new Map(
-						this.layoutManager.panels.map((panel) => [panel, 0])
+					this.fx = new Fx();
+					this.zero = new Zero();
+					this.state = new Map(
+						this.fx.panels.map((panel) => [panel, 0])
 					);
 
 					document.addEventListener('keydown', (e) =>
@@ -131,44 +131,42 @@
 
 				async renderAll() {
 					await Promise.all(
-						this.layoutManager.getVisiblePanels().map((panel) => {
-							const frameIndex = this.panelFrames.get(panel);
-							return this.frameSource.render(panel, frameIndex);
+						this.fx.getVisible().map((panel) => {
+							const frameIndex = this.state.get(panel);
+							return this.zero.render(panel, frameIndex);
 						})
 					);
 				}
 
 				async navigate(delta) {
-					const total = this.frameSource.totalFrames || 1;
-					const panel = this.layoutManager.getFocusedPanel();
-					const currentFrame = this.panelFrames.get(panel);
+					const total = this.zero.totalFrames || 1;
+					const panel = this.fx.getFocusedPanel();
+					const currentFrame = this.state.get(panel);
 					const newFrame =
 						(((currentFrame + delta) % total) + total) % total;
 
-					this.panelFrames.set(panel, newFrame);
-					await this.frameSource.render(panel, newFrame);
+					this.state.set(panel, newFrame);
+					await this.zero.render(panel, newFrame);
 				}
 
 				handleKey(e) {
 					const actions = {
 						e: () => this.navigate(1),
 						q: () => this.navigate(-1),
-						1: () => this.layoutManager.toggleFullscreen(),
+						1: () => this.fx.toggleFullscreen(),
 						2: () => {
-							this.layoutManager.changeLayout(1);
+							this.fx.setLayout(1);
 							this.renderAll();
 						},
 						3: () => {
-							this.layoutManager.changeLayout(2);
+							this.fx.setLayout(2);
 							this.renderAll();
 						},
-						Tab: () => (
-							e.preventDefault(), this.layoutManager.cycleFocus()
-						),
+						Tab: () => (e.preventDefault(), this.fx.cycleFocus()),
 					};
 
 					if (actions[e.key]) actions[e.key]();
-					const focusedPanel = this.layoutManager.getFocusedPanel();
+					const focusedPanel = this.fx.getFocusedPanel();
 					if (focusedPanel) {
 						focusedPanel.dispatchEvent(
 							new CustomEvent('panelKey', {
@@ -179,7 +177,94 @@
 				}
 			}
 
-			class FrameSource {
+			class Fx {
+				constructor() {
+					this.app = document.getElementById('app');
+					this.panels = ['zero', 'one', 'two'].map((id) =>
+						document.getElementById(id)
+					);
+					this.layout = [0, 0];
+					this.focus = 0;
+					this.fullscreen = false;
+					this.savedState = null;
+					this.layouts = [
+						{ panels: 1, variants: 1 },
+						{ panels: 2, variants: 2 },
+						{ panels: 3, variants: 4 },
+					];
+					this.render();
+				}
+
+				getVisible() {
+					const count = this.layouts[this.layout[0]].panels;
+					return this.panels.slice(0, count);
+				}
+
+				getFocusedPanel() {
+					return this.panels[this.focus];
+				}
+
+				getPanelByElement(element) {
+					return element.closest('.panel');
+				}
+
+				toggleFullscreen() {
+					if (this.fullscreen) {
+						this.fullscreen = false;
+						this.layout = this.savedState.layout;
+						this.focus = this.savedState.focus;
+						this.savedState = null;
+						this.render();
+					} else {
+						this.savedState = {
+							layout: [...this.layout],
+							focus: this.focus,
+						};
+						this.fullscreen = true;
+						this.layout = [0, 0];
+						this.render();
+						this.panels.forEach((panel, i) => {
+							panel.style.display =
+								i === this.savedState.focus ? 'flex' : 'none';
+						});
+					}
+				}
+
+				setLayout(layoutIndex) {
+					if (this.fullscreen) {
+						this.toggleFullscreen();
+					}
+					const currentLayout = this.layouts[layoutIndex];
+					const layoutChanged = this.layout[0] !== layoutIndex;
+					if (layoutChanged) {
+						if (this.focus >= currentLayout.panels) {
+							this.focus = 0;
+						}
+						this.layout = [layoutIndex, 0];
+					} else {
+						this.layout[1] =
+							(this.layout[1] + 1) % currentLayout.variants;
+					}
+					this.render();
+				}
+
+				cycleFocus() {
+					if (this.fullscreen) return;
+					this.focus = (this.focus + 1) % this.getVisible().length;
+				}
+
+				render() {
+					const visible = this.getVisible();
+					this.app.className = `layout-${this.layout[0]}-${this.layout[1]}`;
+
+					this.panels.forEach((panel, i) => {
+						panel.style.display =
+							i < visible.length ? 'flex' : 'none';
+					});
+				}
+			}
+
+			class Zero {
 				constructor() {
 					this.frames = new Map();
 					this.totalFrames = null;
@@ -230,7 +315,6 @@
 
 				async fetchData(key, url) {
 					const dataKey = `__data_${key}`;
-					// Return cached or pending
 					if (this.frames.has(dataKey))
 						return this.frames.get(dataKey);
 					if (this.pending.has(dataKey))
@@ -239,12 +323,11 @@
 						.then(async (res) => {
 							if (!res.ok) throw new Error(`HTTP ${res.status}`);
 							const contentType = res.headers.get('content-type');
-							// Handle images - return blob URL
+							// return blob URL for images, otherwise parse as JSON
 							if (contentType?.startsWith('image/')) {
 								const blob = await res.blob();
 								return URL.createObjectURL(blob);
 							}
-							// Handle JSON
 							return res.json();
 						})
 						.then((data) => {
@@ -255,9 +338,7 @@
 							console.error(`Error fetching data ${key}:`, err);
 							throw err;
 						});
-
 					this.pending.set(dataKey, promise);
-
 					try {
 						return await promise;
 					} finally {
@@ -272,9 +353,7 @@
 				async render(panel, frameIdx) {
 					const content = await this.fetchFrame(frameIdx);
 					panel.innerHTML = content;
-
 					if (!panel.__frameState) panel.__frameState = {};
-
 					['script', 'style'].forEach((tag) => {
 						panel.querySelectorAll(tag).forEach((old) => {
 							const el = document.createElement(tag);
@@ -285,12 +364,6 @@
 							old.replaceWith(el);
 						});
 					});
-
-					panel.dispatchEvent(
-						new CustomEvent('frameRendered', {
-							detail: { frameIdx },
-						})
-					);
 				}
 
 				getPanelState(panel) {
@@ -307,121 +380,20 @@
 				}
 			}
 
-			class LayoutManager {
-				constructor() {
-					this.app = document.getElementById('app');
-					this.panels = ['zero', 'one', 'two'].map((id) =>
-						document.getElementById(id)
-					);
-					this.layout = [0, 0];
-					this.focus = 0;
-					this.isFullscreen = false;
-					this.savedState = null;
-					this.layouts = [
-						{ panels: 1, variants: 1 },
-						{ panels: 2, variants: 2 },
-						{ panels: 3, variants: 4 },
-					];
-					this.render();
-				}
-
-				getVisibleCount() {
-					return this.layouts[this.layout[0]].panels;
-				}
-
-				getVisiblePanels() {
-					return this.panels.slice(0, this.getVisibleCount());
-				}
-
-				getFocusedPanel() {
-					return this.panels[this.focus];
-				}
-
-				getPanelByElement(element) {
-					return element.closest('.panel');
-				}
-
-				changeLayout(targetLayout) {
-					if (this.isFullscreen) {
-						this.toggleFullscreen();
-					}
-					this.setLayout(targetLayout);
-				}
-
-				toggleFullscreen() {
-					if (this.isFullscreen) {
-						this.isFullscreen = false;
-						this.layout = this.savedState.layout;
-						this.focus = this.savedState.focus;
-						this.savedState = null;
-						this.render();
-					} else {
-						this.savedState = {
-							layout: [...this.layout],
-							focus: this.focus,
-						};
-						this.isFullscreen = true;
-						this.layout = [0, 0];
-						this.render();
-						this.panels.forEach((panel, i) => {
-							panel.style.display =
-								i === this.savedState.focus ? 'flex' : 'none';
-						});
-					}
-				}
-
-				setLayout(layoutIndex) {
-					const currentLayout = this.layouts[layoutIndex];
-					const layoutChanged = this.layout[0] !== layoutIndex;
-
-					if (layoutChanged) {
-						// Reset focus if it's out of bounds for new layout
-						if (this.focus >= currentLayout.panels) {
-							this.focus = 0;
-						}
-						this.layout = [layoutIndex, 0];
-					} else {
-						// Cycle through variants
-						this.layout[1] =
-							(this.layout[1] + 1) % currentLayout.variants;
-					}
-
-					this.render();
-				}
-
-				cycleFocus() {
-					if (this.isFullscreen) return;
-					this.focus = (this.focus + 1) % this.getVisibleCount();
-				}
-
-				render() {
-					const visibleCount = this.getVisibleCount();
-					this.app.className = `layout-${this.layout[0]}-${this.layout[1]}`;
-
-					this.panels.forEach((panel, i) => {
-						panel.style.display =
-							i < visibleCount ? 'flex' : 'none';
-					});
-				}
-			}
-
 			document.addEventListener('DOMContentLoaded', () => {
-				window.app = new App();
+				window.app = new One();
 				window.frameAPI = {
 					getPanel: (scriptElement) =>
-						window.app.layoutManager.getPanelByElement(
-							scriptElement
-						),
+						window.app.fx.getPanelByElement(scriptElement),
 					getFrameIndex: (panel) => {
-						return window.app.panelFrames.get(panel) || 0;
+						return window.app.state.get(panel) || 0;
 					},
-					getState: (panel) =>
-						window.app.frameSource.getPanelState(panel),
+					getState: (panel) => window.app.zero.getPanelState(panel),
 					setState: (panel, key, value) =>
-						window.app.frameSource.setPanelState(panel, key, value),
+						window.app.zero.setPanelState(panel, key, value),
 					fetchData: (key, url) =>
-						window.app.frameSource.fetchData(key, url),
-					getData: (key) => window.app.frameSource.getData(key),
+						window.app.zero.fetchData(key, url),
+					getData: (key) => window.app.zero.getData(key),
 					onKey: (panel, handler) => {
 						panel.addEventListener('panelKey', (e) =>
 							handler(e.detail.key)
