@@ -113,23 +113,21 @@
 			}
 		</style>
 		<script>
-			window.apiUrl = '{{.APIURL}}';
-
 			class One {
 				constructor() {
+					window.apiUrl = '{{.APIURL}}';
 					this.fx = new Fx();
 					this.zero = new Zero();
 					this.state = new Map(
 						this.fx.panels.map((panel) => [panel, 0])
 					);
-
 					document.addEventListener('keydown', (e) =>
 						this.handleKey(e)
 					);
-					this.renderAll();
+					this.render();
 				}
 
-				async renderAll() {
+				async render() {
 					await Promise.all(
 						this.fx.getVisible().map((panel) => {
 							const frameIndex = this.state.get(panel);
@@ -140,11 +138,10 @@
 
 				async navigate(delta) {
 					const total = this.zero.totalFrames || 1;
-					const panel = this.fx.getFocusedPanel();
+					const panel = this.fx.getFocused();
 					const currentFrame = this.state.get(panel);
 					const newFrame =
 						(((currentFrame + delta) % total) + total) % total;
-
 					this.state.set(panel, newFrame);
 					await this.zero.render(panel, newFrame);
 				}
@@ -156,17 +153,17 @@
 						1: () => this.fx.toggleFullscreen(),
 						2: () => {
 							this.fx.setLayout(1);
-							this.renderAll();
+							this.render();
 						},
 						3: () => {
 							this.fx.setLayout(2);
-							this.renderAll();
+							this.render();
 						},
 						Tab: () => (e.preventDefault(), this.fx.cycleFocus()),
 					};
 
 					if (actions[e.key]) actions[e.key]();
-					const focusedPanel = this.fx.getFocusedPanel();
+					const focusedPanel = this.fx.getFocused();
 					if (focusedPanel) {
 						focusedPanel.dispatchEvent(
 							new CustomEvent('panelKey', {
@@ -200,7 +197,7 @@
 					return this.panels.slice(0, count);
 				}
 
-				getFocusedPanel() {
+				getFocused() {
 					return this.panels[this.focus];
 				}
 
@@ -230,17 +227,17 @@
 					}
 				}
 
-				setLayout(layoutIndex) {
+				setLayout(index) {
 					if (this.fullscreen) {
 						this.toggleFullscreen();
 					}
-					const currentLayout = this.layouts[layoutIndex];
-					const layoutChanged = this.layout[0] !== layoutIndex;
+					const currentLayout = this.layouts[index];
+					const layoutChanged = this.layout[0] !== index;
 					if (layoutChanged) {
 						if (this.focus >= currentLayout.panels) {
 							this.focus = 0;
 						}
-						this.layout = [layoutIndex, 0];
+						this.layout = [index, 0];
 					} else {
 						this.layout[1] =
 							(this.layout[1] + 1) % currentLayout.variants;
@@ -256,7 +253,6 @@
 				render() {
 					const visible = this.getVisible();
 					this.app.className = `layout-${this.layout[0]}-${this.layout[1]}`;
-
 					this.panels.forEach((panel, i) => {
 						panel.style.display =
 							i < visible.length ? 'flex' : 'none';
@@ -373,10 +369,6 @@
 				setPanelState(panel, key, value) {
 					if (!panel.__frameState) panel.__frameState = {};
 					panel.__frameState[key] = value;
-				}
-
-				clearPanelState(panel) {
-					panel.__frameState = {};
 				}
 			}
 
