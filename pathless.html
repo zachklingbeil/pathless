@@ -121,17 +121,15 @@
 			}
 		</style>
 		<script>
+			window.apiUrl = '{{.APIURL}}';
+
 			class App {
-				constructor(apiUrl) {
+				constructor() {
 					this.layoutManager = new LayoutManager();
 					this.frameSource = new FrameSource();
-					this.panelFrames = new Map();
-					this.layoutManager.panels.forEach((panel) => {
-						this.panelFrames.set(panel, {
-							frameIndex: 0,
-							state: {},
-						});
-					});
+					this.panelFrames = new Map(
+						this.layoutManager.panels.map((panel) => [panel, 0])
+					);
 
 					document.addEventListener('keydown', (e) =>
 						this.handleKey(e)
@@ -140,16 +138,10 @@
 				}
 
 				async renderAll() {
-					const panels = this.layoutManager.getVisiblePanels();
-
 					await Promise.all(
-						panels.map((panel) => {
-							const panelData = this.panelFrames.get(panel);
-							return this.frameSource.render(
-								panel,
-								panelData.frameIndex,
-								panelData.state
-							);
+						this.layoutManager.getVisiblePanels().map((panel) => {
+							const frameIndex = this.panelFrames.get(panel);
+							return this.frameSource.render(panel, frameIndex);
 						})
 					);
 				}
@@ -157,25 +149,12 @@
 				async navigate(delta) {
 					const total = this.frameSource.totalFrames || 1;
 					const panel = this.layoutManager.getFocusedPanel();
-					const panelData = this.panelFrames.get(panel);
+					const currentFrame = this.panelFrames.get(panel);
 					const newFrame =
-						(((panelData.frameIndex + delta) % total) + total) %
-						total;
+						(((currentFrame + delta) % total) + total) % total;
 
-					panelData.frameIndex = newFrame;
-					await this.frameSource.render(
-						panel,
-						newFrame,
-						panelData.state
-					);
-				}
-
-				changeLayout(targetLayout) {
-					if (this.layoutManager.isFullscreen) {
-						this.layoutManager.toggleFullscreen();
-					}
-					this.layoutManager.setLayout(targetLayout);
-					this.renderAll();
+					this.panelFrames.set(panel, newFrame);
+					await this.frameSource.render(panel, newFrame);
 				}
 
 				handleKey(e) {
@@ -183,16 +162,24 @@
 						e: () => this.navigate(1),
 						q: () => this.navigate(-1),
 						1: () => this.layoutManager.toggleFullscreen(),
-						2: () => this.changeLayout(1),
-						3: () => this.changeLayout(2),
+						2: () => {
+							this.layoutManager.changeLayout(1);
+							this.renderAll();
+						},
+						3: () => {
+							this.layoutManager.changeLayout(2);
+							this.renderAll();
+						},
 						Tab: () => this.layoutManager.cycleFocus(),
 						r: () => this.resetAllPanels(),
 					};
+
 					const handler = keyMap[e.key];
 					if (handler) {
 						e.preventDefault();
 						handler();
 					}
+
 					this.layoutManager
 						.getFocusedPanel()
 						?.dispatchEvent(
@@ -202,52 +189,26 @@
 
 				resetAllPanels() {
 					this.layoutManager.panels.forEach((panel) => {
-						this.panelFrames.set(panel, {
-							frameIndex: 0,
-							state: {},
-						});
+						this.panelFrames.set(panel, 0);
+						this.frameSource.clearPanelState(panel);
 					});
 					this.renderAll();
-				}
-				getPanelState(panel) {
-					return this.panelFrames.get(panel)?.state || {};
-				}
-				setPanelState(panel, key, value) {
-					const panelData = this.panelFrames.get(panel);
-					if (panelData) {
-						panelData.state[key] = value;
-					}
-				}
-
-				clearPanelState(panel) {
-					const panelData = this.panelFrames.get(panel);
-					if (panelData) {
-						panelData.state = {};
-					}
 				}
 			}
 
 			class FrameSource {
 				constructor() {
-					window.apiUrl = '{{.APIURL}}';
 					this.frames = new Map();
-					this.frames.set('__cache__', new Map()); // Nested cache for resources
 					this.totalFrames = null;
 					this.pending = new Map();
 				}
 
 				async fetchFrame(idx) {
-					if (this.frames.has(idx)) {
-						return this.frames.get(idx);
-					}
+					if (this.frames.has(idx)) return this.frames.get(idx);
+					if (this.pending.has(idx)) return this.pending.get(idx);
 
-					if (this.pending.has(idx)) {
-						return this.pending.get(idx);
-					}
-
-					if (this.totalFrames === null && idx !== 0) {
+					if (this.totalFrames === null && idx !== 0)
 						await this.fetchFrame(0);
-					}
 
 					if (!window.apiUrl) {
 						const error = '<div>No API URL configured</div>';
@@ -255,7 +216,7 @@
 						return error;
 					}
 
-					const fetchPromise = this._performFetch(idx);
+					const fetchPromise = this._fetch(idx);
 					this.pending.set(idx, fetchPromise);
 
 					try {
@@ -267,24 +228,18 @@
 					}
 				}
 
-				async _performFetch(idx) {
+				async _fetch(idx) {
 					try {
-						const res =
-							idx === 0
-								? await fetch(window.apiUrl)
-								: await fetch(window.apiUrl, {
-										headers: { 'X-Frame': String(idx) },
-								  });
+						const res = await fetch(window.apiUrl, {
+							headers:
+								idx === 0 ? {} : { 'X-Frame': String(idx) },
+						});
 
-						if (!res.ok) {
-							throw new Error(`HTTP ${res.status}`);
-						}
+						if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
 						if (this.totalFrames === null) {
 							const total = res.headers.get('X-Frames');
-							if (total) {
-								this.totalFrames = parseInt(total, 10);
-							}
+							if (total) this.totalFrames = parseInt(total, 10);
 						}
 
 						return await res.text();
@@ -294,83 +249,118 @@
 					}
 				}
 
-				async fetchResource(key, url) {
-					const cache = this.frames.get('__cache__');
+				async fetchData(key, url) {
+					const dataKey = `__data_${key}`;
 
-					// Check cache first
-					if (cache.has(key)) {
-						return cache.get(key);
-					}
+					// Return cached data if already fetched (shared across all panels)
+					if (this.frames.has(dataKey))
+						return this.frames.get(dataKey);
 
-					// Check if fetch is in progress
-					const pendingKey = `__pending_${key}__`;
-					if (cache.has(pendingKey)) {
-						return cache.get(pendingKey);
-					}
+					// Return pending promise if currently fetching (prevents duplicate requests)
+					if (this.pending.has(dataKey))
+						return this.pending.get(dataKey);
 
-					// Start fetch and cache the promise
-					const fetchPromise = fetch(url)
-						.then((response) => {
-							if (!response.ok) {
-								throw new Error(`HTTP ${response.status}`);
+					// Fetch and cache globally
+					const promise = fetch(url)
+						.then(async (res) => {
+							if (!res.ok)
+								return Promise.reject(`HTTP ${res.status}`);
+
+							const contentType = res.headers.get('content-type');
+
+							// Handle images - return blob URL
+							if (contentType?.startsWith('image/')) {
+								const blob = await res.blob();
+								return URL.createObjectURL(blob);
 							}
-							return response.json();
+
+							// Handle JSON
+							return res.json();
 						})
 						.then((data) => {
-							cache.set(key, data);
-							cache.delete(pendingKey);
+							this.frames.set(dataKey, data); // Cache globally for all panels
 							return data;
 						})
-						.catch((error) => {
-							console.error(
-								`Error fetching resource ${key}:`,
-								error
-							);
-							cache.delete(pendingKey);
-							throw error;
+						.catch((err) => {
+							console.error(`Error fetching data ${key}:`, err);
+							throw err;
 						});
 
-					cache.set(pendingKey, fetchPromise);
-					return fetchPromise;
+					this.pending.set(dataKey, promise);
+
+					try {
+						return await promise;
+					} finally {
+						this.pending.delete(dataKey);
+					}
 				}
 
-				getCachedResource(key) {
-					const cache = this.frames.get('__cache__');
-					return cache.get(key);
+				getData(key) {
+					return this.frames.get(`__data_${key}`);
 				}
 
-				async render(panelElement, frameIdx, state) {
+				async render(panel, frameIdx) {
 					const content = await this.fetchFrame(frameIdx);
-					panelElement.innerHTML = content;
-					panelElement.__frameState = state;
-					panelElement.__frameSource = this;
-					panelElement.__frameIndex = frameIdx;
+					panel.innerHTML = content;
 
-					const scripts = panelElement.querySelectorAll('script');
-					scripts.forEach((oldScript) => {
-						const newScript = document.createElement('script');
-						Array.from(oldScript.attributes).forEach((attr) => {
-							newScript.setAttribute(attr.name, attr.value);
+					if (!panel.__frameState) panel.__frameState = {};
+
+					['script', 'style'].forEach((tag) => {
+						panel.querySelectorAll(tag).forEach((old) => {
+							const el = document.createElement(tag);
+							Array.from(old.attributes).forEach((attr) =>
+								el.setAttribute(attr.name, attr.value)
+							);
+							el.textContent = old.textContent;
+							old.replaceWith(el);
 						});
-						newScript.textContent = oldScript.textContent;
-						oldScript.parentNode.replaceChild(newScript, oldScript);
 					});
+
+					panel.dispatchEvent(
+						new CustomEvent('frameRendered', {
+							detail: { frameIdx },
+						})
+					);
+				}
+
+				waitForImages(element) {
+					const images = Array.from(element.querySelectorAll('img'));
+					return Promise.all(
+						images.map((img) =>
+							img.complete
+								? Promise.resolve()
+								: new Promise((resolve) => {
+										img.addEventListener('load', resolve);
+										img.addEventListener('error', resolve);
+								  })
+						)
+					);
+				}
+
+				getPanelState(panel) {
+					return panel.__frameState || {};
+				}
+
+				setPanelState(panel, key, value) {
+					if (!panel.__frameState) panel.__frameState = {};
+					panel.__frameState[key] = value;
+				}
+
+				clearPanelState(panel) {
+					panel.__frameState = {};
 				}
 			}
 
 			class LayoutManager {
 				constructor() {
 					this.app = document.getElementById('app');
-					this.panels = [
-						document.getElementById('zero'),
-						document.getElementById('one'),
-						document.getElementById('two'),
-					];
+					this.panels = ['zero', 'one', 'two'].map((id) =>
+						document.getElementById(id)
+					);
 					this.layout = [0, 0];
 					this.focus = 0;
 					this.isFullscreen = false;
-					this.savedLayout = null;
-					this.savedFocusedIdx = null;
+					this.savedState = null;
 					this.layouts = [
 						{ panels: 1, variants: 1 },
 						{ panels: 2, variants: 2 },
@@ -391,51 +381,71 @@
 					return this.panels[this.focus];
 				}
 
+				getPanelByElement(element) {
+					return element.closest('.panel');
+				}
+
+				getPanelIndex(panel) {
+					return this.panels.indexOf(panel);
+				}
+
 				cycleFocus() {
-					if (this.isFullscreen) {
-						return;
-					}
+					if (this.isFullscreen) return;
 					this.focus = (this.focus + 1) % this.getVisibleCount();
-					this.renderFocus();
+					this._renderFocus();
+				}
+
+				changeLayout(targetLayout) {
+					if (this.isFullscreen) {
+						this.toggleFullscreen();
+					}
+					this.setLayout(targetLayout);
 				}
 
 				toggleFullscreen() {
 					if (this.isFullscreen) {
-						// Exit fullscreen - restore previous layout
-						this.isFullscreen = false;
-						this.layout = this.savedLayout;
-						this.focus = this.savedFocusedIdx;
-						this.render();
+						this._exitFullscreen();
 					} else {
-						// Enter fullscreen - save current state
-						this.savedLayout = [...this.layout];
-						this.savedFocusedIdx = this.focus;
-						this.isFullscreen = true;
-
-						// Set to single panel layout (1 row, 1 column grid)
-						this.layout = [0, 0];
-
-						// First apply the layout to change grid to single panel
-						this.render();
-
-						// Then hide all panels except the focused one
-						this.panels.forEach((panel, i) => {
-							panel.style.display =
-								i === this.savedFocusedIdx ? 'flex' : 'none';
-						});
+						this._enterFullscreen();
 					}
 				}
 
+				_enterFullscreen() {
+					this.savedState = {
+						layout: [...this.layout],
+						focus: this.focus,
+					};
+					this.isFullscreen = true;
+					this.layout = [0, 0];
+					this.render();
+
+					// Show only focused panel
+					this.panels.forEach((panel, i) => {
+						panel.style.display =
+							i === this.savedState.focus ? 'flex' : 'none';
+					});
+				}
+
+				_exitFullscreen() {
+					this.isFullscreen = false;
+					this.layout = this.savedState.layout;
+					this.focus = this.savedState.focus;
+					this.savedState = null;
+					this.render();
+				}
+
 				setLayout(layoutIndex) {
-					const layoutChanged = this.layout[0] !== layoutIndex;
 					const currentLayout = this.layouts[layoutIndex];
+					const layoutChanged = this.layout[0] !== layoutIndex;
 
 					if (layoutChanged) {
+						// Reset focus if it's out of bounds for new layout
 						if (this.focus >= currentLayout.panels) {
 							this.focus = 0;
 						}
 						this.layout = [layoutIndex, 0];
 					} else {
+						// Cycle through variants
 						this.layout[1] =
 							(this.layout[1] + 1) % currentLayout.variants;
 					}
@@ -444,21 +454,21 @@
 				}
 
 				render() {
-					this.renderLayout();
-					this.renderFocus();
+					this._renderLayout();
+					this._renderFocus();
 				}
 
-				renderLayout() {
-					const currentLayout = this.layouts[this.layout[0]];
+				_renderLayout() {
+					const visibleCount = this.getVisibleCount();
 					this.app.className = `layout-${this.layout[0]}-${this.layout[1]}`;
 
 					this.panels.forEach((panel, i) => {
 						panel.style.display =
-							i < currentLayout.panels ? 'flex' : 'none';
+							i < visibleCount ? 'flex' : 'none';
 					});
 				}
 
-				renderFocus() {
+				_renderFocus() {
 					this.panels.forEach((panel, i) => {
 						panel.classList.toggle('focused', i === this.focus);
 					});
@@ -466,7 +476,30 @@
 			}
 
 			document.addEventListener('DOMContentLoaded', () => {
-				new App();
+				window.app = new App();
+				window.frameAPI = {
+					getPanel: (scriptElement) =>
+						window.app.layoutManager.getPanelByElement(
+							scriptElement
+						),
+					getFrameIndex: (panel) => {
+						return window.app.panelFrames.get(panel) || 0;
+					},
+					getState: (panel) =>
+						window.app.frameSource.getPanelState(panel),
+					setState: (panel, key, value) =>
+						window.app.frameSource.setPanelState(panel, key, value),
+					waitForImages: (element) =>
+						window.app.frameSource.waitForImages(element),
+					fetchData: (key, url) =>
+						window.app.frameSource.fetchData(key, url),
+					getData: (key) => window.app.frameSource.getData(key),
+					onKey: (panel, handler) => {
+						panel.addEventListener('panelKey', (e) =>
+							handler(e.detail.key)
+						);
+					},
+				};
 			});
 		</script>
 	</head>
