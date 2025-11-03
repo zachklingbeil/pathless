@@ -257,6 +257,8 @@
 							p.style.display =
 								i === this.state[2] ? 'flex' : 'none';
 						});
+					} else {
+						this.render();
 					}
 				}
 
@@ -279,7 +281,6 @@
 				async fetch(key, url, options = {}) {
 					if (this.cache.has(key)) return this.cache.get(key);
 					if (this.pending.has(key)) return this.pending.get(key);
-
 					const promise = fetch(url, options)
 						.then(async (res) => {
 							if (!res.ok) throw new Error(`HTTP ${res.status}`);
