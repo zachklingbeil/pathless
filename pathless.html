@@ -118,10 +118,8 @@
 					window.apiUrl = '{{.APIURL}}';
 					this.fx = new Fx();
 					this.zero = new Zero();
-					this.state = new Map(
-						this.fx.panels.map((panel) => [panel, 0])
-					);
-					this.frameHandlers = new Map(); // Store frame key handlers
+					this.state = new Map(this.fx.panels.map((p) => [p, 0]));
+					this.handlers = new Map();
 					document.addEventListener('keydown', (e) =>
 						this.handleKey(e)
 					);
@@ -132,9 +130,7 @@
 					await Promise.all(
 						this.fx
 							.getVisible()
-							.map((panel) =>
-								this.zero.render(panel, this.state.get(panel))
-							)
+							.map((p) => this.zero.render(p, this.state.get(p)))
 					);
 				}
 
@@ -149,11 +145,11 @@
 
 				getContext() {
 					const panel = this.fx.getFocused();
-					if (!panel.__frameState) panel.__frameState = {};
+					if (!panel.__state) panel.__state = {};
 					return {
 						panel,
 						frameIndex: this.state.get(panel) || 0,
-						state: panel.__frameState,
+						state: panel.__state,
 					};
 				}
 
@@ -161,10 +157,9 @@
 					this.getContext().state[key] = value;
 				}
 
-				registerKeyHandler(handler) {
+				onKey(handler) {
 					const { panel, frameIndex } = this.getContext();
-					const key = `${panel.id}-${frameIndex}`;
-					this.frameHandlers.set(key, handler);
+					this.handlers.set(`${panel.id}-${frameIndex}`, handler);
 				}
 
 				handleKey(e) {
@@ -172,28 +167,19 @@
 						e: () => this.navigate(1),
 						q: () => this.navigate(-1),
 						1: () => this.fx.toggleFullscreen(),
-						2: () => {
-							this.fx.setLayout(1);
-							this.render();
-						},
-						3: () => {
-							this.fx.setLayout(2);
-							this.render();
-						},
-						Tab: () => {
-							e.preventDefault();
-							this.fx.cycleFocus();
-						},
+						2: () => (this.fx.setLayout(1), this.render()),
+						3: () => (this.fx.setLayout(2), this.render()),
+						Tab: () => (e.preventDefault(), this.fx.cycleFocus()),
 					};
+
 					if (actions[e.key]) {
 						actions[e.key]();
 					} else {
 						const { panel, frameIndex } = this.getContext();
-						const key = `${panel.id}-${frameIndex}`;
-						const handler = this.frameHandlers.get(key);
-						if (handler) {
-							handler(e.key);
-						}
+						const handler = this.handlers.get(
+							`${panel.id}-${frameIndex}`
+						);
+						if (handler) handler(e.key);
 					}
 				}
 			}
@@ -204,7 +190,7 @@
 					this.panels = ['zero', 'one', 'two'].map((id) =>
 						document.getElementById(id)
 					);
-					this.state = [0, 0, 0]; // [layout, variant, focus]
+					this.state = [0, 0, 0];
 					this.fullscreen = false;
 					this.savedState = null;
 					this.layouts = [
@@ -231,14 +217,15 @@
 						this.fullscreen = false;
 						this.state = [...this.savedState];
 						this.savedState = null;
-						this.render();
 					} else {
 						this.savedState = [...this.state];
 						this.fullscreen = true;
 						this.state = [0, 0, this.state[2]];
-						this.render();
-						this.panels.forEach((panel, i) => {
-							panel.style.display =
+					}
+					this.render();
+					if (this.fullscreen) {
+						this.panels.forEach((p, i) => {
+							p.style.display =
 								i === this.savedState[2] ? 'flex' : 'none';
 						});
 					}
@@ -248,9 +235,7 @@
 					if (this.fullscreen) this.toggleFullscreen();
 
 					const layout = this.layouts[index];
-					const layoutChanged = this.state[0] !== index;
-
-					if (layoutChanged) {
+					if (this.state[0] !== index) {
 						if (this.state[2] >= layout.panels) this.state[2] = 0;
 						this.state = [index, 0, this.state[2]];
 					} else {
@@ -260,15 +245,13 @@
 				}
 
 				cycleFocus() {
-					const visibleCount = this.fullscreen
+					const count = this.fullscreen
 						? this.panels.length
 						: this.getVisible().length;
-
-					this.state[2] = (this.state[2] + 1) % visibleCount;
-
+					this.state[2] = (this.state[2] + 1) % count;
 					if (this.fullscreen) {
-						this.panels.forEach((panel, i) => {
-							panel.style.display =
+						this.panels.forEach((p, i) => {
+							p.style.display =
 								i === this.state[2] ? 'flex' : 'none';
 						});
 					}
@@ -277,9 +260,8 @@
 				render() {
 					const visible = this.getVisible();
 					this.app.className = `layout-${this.state[0]}-${this.state[1]}`;
-					this.panels.forEach((panel, i) => {
-						panel.style.display =
-							i < visible.length ? 'flex' : 'none';
+					this.panels.forEach((p, i) => {
+						p.style.display = i < visible.length ? 'flex' : 'none';
 					});
 				}
 			}
@@ -309,13 +291,11 @@
 							if (type?.startsWith('image/')) {
 								return URL.createObjectURL(await res.blob());
 							}
-							if (type?.includes('json')) return res.json();
-							return res.text();
+							return type?.includes('json')
+								? res.json()
+								: res.text();
 						})
-						.then((data) => {
-							this.cache.set(key, data);
-							return data;
-						})
+						.then((data) => (this.cache.set(key, data), data))
 						.catch((err) => {
 							console.error(`Fetch failed for "${key}":`, err);
 							throw err;
@@ -343,7 +323,7 @@
 
 				async render(panel, frameIdx) {
 					panel.innerHTML = await this.fetchFrame(frameIdx);
-					if (!panel.__frameState) panel.__frameState = {};
+					if (!panel.__state) panel.__state = {};
 
 					['script', 'style'].forEach((tag) => {
 						panel.querySelectorAll(tag).forEach((old) => {
@@ -362,9 +342,9 @@
 				window.one = new One();
 				window.frameAPI = {
 					getContext: () => window.one.getContext(),
-					setState: (key, value) => window.one.setState(key, value),
-					fetch: (key, url) => window.one.zero.fetch(key, url),
-					onKey: (handler) => window.one.registerKeyHandler(handler),
+					setState: (k, v) => window.one.setState(k, v),
+					fetch: (k, u) => window.one.zero.fetch(k, u),
+					onKey: (h) => window.one.onKey(h),
 				};
 			});
 		</script>
