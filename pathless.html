@@ -135,7 +135,7 @@
 				}
 
 				async navigate(delta) {
-					const { panel, frameIndex } = this.getContext();
+					const { panel, frameIndex } = this.context();
 					const total = this.zero.totalFrames || 1;
 					const next =
 						(((frameIndex + delta) % total) + total) % total;
@@ -143,7 +143,7 @@
 					await this.zero.render(panel, next);
 				}
 
-				getContext() {
+				context() {
 					const panel = this.fx.getFocused();
 					if (!panel.__state) panel.__state = {};
 					return {
@@ -153,29 +153,33 @@
 					};
 				}
 
-				setState(key, value) {
-					this.getContext().state[key] = value;
+				update(key, value) {
+					this.context().state[key] = value;
 				}
 
 				onKey(handler) {
-					const { panel, frameIndex } = this.getContext();
+					const { panel, frameIndex } = this.context();
 					this.handlers.set(`${panel.id}-${frameIndex}`, handler);
 				}
 
-				handleKey(e) {
+				async handleKey(e) {
 					const actions = {
 						e: () => this.navigate(1),
 						q: () => this.navigate(-1),
 						1: () => this.fx.toggleFullscreen(),
-						2: () => (this.fx.setLayout(1), this.render()),
-						3: () => (this.fx.setLayout(2), this.render()),
-						Tab: () => (e.preventDefault(), this.fx.cycleFocus()),
+						2: () => this.fx.setLayout(1),
+						3: () => this.fx.setLayout(2),
+						Tab: () => {
+							e.preventDefault();
+							this.fx.cycleFocus();
+						},
 					};
-
-					if (actions[e.key]) {
-						actions[e.key]();
+					const action = actions[e.key];
+					if (action) {
+						await action();
+						await this.render();
 					} else {
-						const { panel, frameIndex } = this.getContext();
+						const { panel, frameIndex } = this.context();
 						const handler = this.handlers.get(
 							`${panel.id}-${frameIndex}`
 						);
@@ -233,7 +237,6 @@
 
 				setLayout(index) {
 					if (this.fullscreen) this.toggleFullscreen();
-
 					const layout = this.layouts[index];
 					if (this.state[0] !== index) {
 						if (this.state[2] >= layout.panels) this.state[2] = 0;
@@ -286,7 +289,6 @@
 								if (total)
 									this.totalFrames = parseInt(total, 10);
 							}
-
 							const type = res.headers.get('content-type');
 							if (type?.startsWith('image/')) {
 								return URL.createObjectURL(await res.blob());
@@ -310,7 +312,6 @@
 					if (this.totalFrames === null && idx !== 0) {
 						await this.fetchFrame(0);
 					}
-
 					try {
 						return await this.fetch(idx, window.apiUrl, {
 							headers:
@@ -324,7 +325,6 @@
 				async render(panel, frameIdx) {
 					panel.innerHTML = await this.fetchFrame(frameIdx);
 					if (!panel.__state) panel.__state = {};
-
 					['script', 'style'].forEach((tag) => {
 						panel.querySelectorAll(tag).forEach((old) => {
 							const el = document.createElement(tag);
@@ -341,8 +341,8 @@
 			document.addEventListener('DOMContentLoaded', () => {
 				window.one = new One();
 				window.frameAPI = {
-					getContext: () => window.one.getContext(),
-					setState: (k, v) => window.one.setState(k, v),
+					context: () => window.one.context(),
+					update: (k, v) => window.one.update(k, v),
 					fetch: (k, u) => window.one.zero.fetch(k, u),
 					onKey: (h) => window.one.onKey(h),
 				};
