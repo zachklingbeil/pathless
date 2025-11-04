@@ -117,56 +117,17 @@
 				constructor() {
 					window.apiUrl = '{{.APIURL}}';
 					this.fx = new Fx();
-					this.zero = new Zero();
-					this.state = new Map(this.fx.panels.map((p) => [p, 0]));
-					this.handlers = new Map();
 					document.addEventListener('keydown', (e) =>
 						this.handleKey(e)
 					);
-					this.render();
-				}
-
-				async render() {
-					await Promise.all(
-						this.fx
-							.getVisible()
-							.map((p) => this.zero.render(p, this.state.get(p)))
-					);
-				}
-
-				async navigate(delta) {
-					const { panel, frameIndex } = this.context();
-					const total = this.zero.totalFrames || 1;
-					const next =
-						(((frameIndex + delta) % total) + total) % total;
-					this.state.set(panel, next);
-					await this.zero.render(panel, next);
-				}
-
-				context() {
-					const panel = this.fx.getFocused();
-					if (!panel.__state) panel.__state = {};
-					return {
-						panel,
-						frameIndex: this.state.get(panel) || 0,
-						state: panel.__state,
-					};
-				}
-
-				update(key, value) {
-					this.context().state[key] = value;
-				}
-
-				onKey(handler) {
-					const { panel, frameIndex } = this.context();
-					this.handlers.set(`${panel.id}-${frameIndex}`, handler);
+					this.fx.render();
 				}
 
 				async handleKey(e) {
 					const actions = {
-						e: () => this.navigate(1),
-						q: () => this.navigate(-1),
-						1: () => this.fx.toggleFullscreen(),
+						e: () => this.fx.navigate(1),
+						q: () => this.fx.navigate(-1),
+						1: () => this.fx.setLayout(0),
 						2: () => this.fx.setLayout(1),
 						3: () => this.fx.setLayout(2),
 						Tab: () => {
@@ -174,100 +135,143 @@
 							this.fx.cycleFocus();
 						},
 					};
+
 					const action = actions[e.key];
 					if (action) {
 						await action();
-						await this.render();
 					} else {
-						const { panel, frameIndex } = this.context();
-						const handler = this.handlers.get(
-							`${panel.id}-${frameIndex}`
-						);
-						if (handler) handler(e.key);
+						this.fx.handleKey(e.key);
 					}
 				}
 			}
 
 			class Fx {
 				constructor() {
+					this.zero = new Zero();
 					this.app = document.getElementById('app');
-					this.panels = ['zero', 'one', 'two'].map((id) =>
-						document.getElementById(id)
-					);
-					this.state = [0, 0, 0];
-					this.fullscreen = false;
-					this.savedState = null;
+					this.panels = ['zero', 'one', 'two'].map((id) => ({
+						element: document.getElementById(id),
+						frameIndex: 0,
+					}));
+					this.state = {
+						layoutIndex: 0,
+						variantIndex: 0,
+						focusedPanel: 0,
+					};
+					this.handlers = new Map();
 					this.layouts = [
 						{ panels: 1, variants: 1 },
 						{ panels: 2, variants: 2 },
 						{ panels: 3, variants: 4 },
 					];
-					this.render();
 				}
 
-				getVisible() {
-					return this.panels.slice(
-						0,
-						this.layouts[this.state[0]].panels
-					);
+				context() {
+					const layout = this.layouts[this.state.layoutIndex];
+					const visible = this.panels.slice(0, layout.panels);
+					const focused = this.panels[this.state.focusedPanel];
+
+					if (!focused.element.__state) focused.element.__state = {};
+
+					return {
+						layout,
+						visible,
+						focused,
+						panel: focused.element,
+						frameIndex: focused.frameIndex,
+						state: focused.element.__state,
+						visibleCount: visible.length,
+					};
 				}
 
-				getFocused() {
-					return this.panels[this.state[2]];
+				update(key, value) {
+					this.context().state[key] = value;
 				}
 
-				toggleFullscreen() {
-					if (this.fullscreen) {
-						this.fullscreen = false;
-						this.state = [...this.savedState];
-						this.savedState = null;
+				handleKey(key, handler) {
+					const { panel, frameIndex } = this.context();
+					const handlerKey = `${panel.id}-${frameIndex}`;
+
+					if (handler !== undefined) {
+						this.handlers.set(handlerKey, handler);
 					} else {
-						this.savedState = [...this.state];
-						this.fullscreen = true;
-						this.state = [0, 0, this.state[2]];
-					}
-					this.render();
-					if (this.fullscreen) {
-						this.panels.forEach((p, i) => {
-							p.style.display =
-								i === this.savedState[2] ? 'flex' : 'none';
-						});
+						const registeredHandler = this.handlers.get(handlerKey);
+						if (registeredHandler) registeredHandler(key);
 					}
 				}
 
-				setLayout(index) {
-					if (this.fullscreen) this.toggleFullscreen();
-					const layout = this.layouts[index];
-					if (this.state[0] !== index) {
-						if (this.state[2] >= layout.panels) this.state[2] = 0;
-						this.state = [index, 0, this.state[2]];
-					} else {
-						this.state[1] = (this.state[1] + 1) % layout.variants;
+				async navigate(delta) {
+					const { focused } = this.context();
+					const total = this.zero.totalFrames || 1;
+					const next =
+						(((focused.frameIndex + delta) % total) + total) %
+						total;
+
+					focused.frameIndex = next;
+					await this.renderPanel(focused.element, next);
+				}
+
+				async setLayout(index) {
+					const newLayout = this.layouts[index];
+
+					if (this.state.focusedPanel >= newLayout.panels) {
+						this.state.focusedPanel = 0;
 					}
-					this.render();
+
+					if (this.state.layoutIndex === index) {
+						this.state.variantIndex =
+							(this.state.variantIndex + 1) % newLayout.variants;
+					} else {
+						this.state.layoutIndex = index;
+						this.state.variantIndex = 0;
+					}
+
+					await this.render();
 				}
 
 				cycleFocus() {
-					const count = this.fullscreen
-						? this.panels.length
-						: this.getVisible().length;
-					this.state[2] = (this.state[2] + 1) % count;
-					if (this.fullscreen) {
-						this.panels.forEach((p, i) => {
-							p.style.display =
-								i === this.state[2] ? 'flex' : 'none';
-						});
-					} else {
-						this.render();
-					}
+					const { visibleCount } = this.context();
+					this.state.focusedPanel =
+						(this.state.focusedPanel + 1) % visibleCount;
+					this.updateDisplay();
 				}
 
-				render() {
-					const visible = this.getVisible();
-					this.app.className = `layout-${this.state[0]}-${this.state[1]}`;
-					this.panels.forEach((p, i) => {
-						p.style.display = i < visible.length ? 'flex' : 'none';
+				async renderPanel(panelElement, frameIdx) {
+					panelElement.innerHTML = await this.zero.fetchFrame(
+						frameIdx
+					);
+
+					if (!panelElement.__state) panelElement.__state = {};
+
+					['script', 'style'].forEach((tag) => {
+						panelElement.querySelectorAll(tag).forEach((old) => {
+							const el = document.createElement(tag);
+							Array.from(old.attributes).forEach((attr) =>
+								el.setAttribute(attr.name, attr.value)
+							);
+							el.textContent = old.textContent;
+							old.replaceWith(el);
+						});
 					});
+				}
+
+				updateDisplay() {
+					const { visible } = this.context();
+					this.app.className = `layout-${this.state.layoutIndex}-${this.state.variantIndex}`;
+					this.panels.forEach((p, i) => {
+						p.element.style.display =
+							i < visible.length ? 'flex' : 'none';
+					});
+				}
+
+				async render() {
+					const { visible } = this.context();
+					await Promise.all(
+						visible.map((p) =>
+							this.renderPanel(p.element, p.frameIndex)
+						)
+					);
+					this.updateDisplay();
 				}
 			}
 
@@ -276,29 +280,27 @@
 					this.cache = new Map();
 					this.pending = new Map();
 					this.totalFrames = null;
+					this.frameUrl = `${window.apiUrl}/frame`;
 				}
 
 				async fetch(key, url, options = {}) {
 					if (this.cache.has(key)) return this.cache.get(key);
 					if (this.pending.has(key)) return this.pending.get(key);
+
 					const promise = fetch(url, options)
 						.then(async (res) => {
 							if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-							if (this.totalFrames === null) {
-								const total = res.headers.get('X-Frames');
-								if (total)
-									this.totalFrames = parseInt(total, 10);
-							}
 							const type = res.headers.get('content-type');
-							if (type?.startsWith('image/')) {
-								return URL.createObjectURL(await res.blob());
-							}
-							return type?.includes('json')
-								? res.json()
-								: res.text();
+							const data = type?.startsWith('image/')
+								? URL.createObjectURL(await res.blob())
+								: type?.includes('json')
+								? await res.json()
+								: await res.text();
+
+							this.cache.set(key, data);
+							return { data, headers: res.headers };
 						})
-						.then((data) => (this.cache.set(key, data), data))
 						.catch((err) => {
 							console.error(`Fetch failed for "${key}":`, err);
 							throw err;
@@ -310,42 +312,37 @@
 				}
 
 				async fetchFrame(idx) {
-					if (this.totalFrames === null && idx !== 0) {
-						await this.fetchFrame(0);
+					// Initialize with frame zero
+					if (this.totalFrames === null) {
+						const { data, headers } = await this.fetch(
+							0,
+							this.frameUrl,
+							{}
+						);
+						const total = headers.get('X-Frames');
+						if (total) this.totalFrames = parseInt(total, 10);
+						if (idx === 0) return data;
 					}
+
+					// Return cached or fetch new
 					try {
-						return await this.fetch(idx, window.apiUrl, {
-							headers:
-								idx === 0 ? {} : { 'X-Frame': String(idx) },
+						const { data } = await this.fetch(idx, this.frameUrl, {
+							headers: { 'X-Frame': String(idx) },
 						});
+						return data;
 					} catch (err) {
 						return `<div>Error loading frame ${idx}</div>`;
 					}
-				}
-
-				async render(panel, frameIdx) {
-					panel.innerHTML = await this.fetchFrame(frameIdx);
-					if (!panel.__state) panel.__state = {};
-					['script', 'style'].forEach((tag) => {
-						panel.querySelectorAll(tag).forEach((old) => {
-							const el = document.createElement(tag);
-							Array.from(old.attributes).forEach((attr) =>
-								el.setAttribute(attr.name, attr.value)
-							);
-							el.textContent = old.textContent;
-							old.replaceWith(el);
-						});
-					});
 				}
 			}
 
 			document.addEventListener('DOMContentLoaded', () => {
 				window.one = new One();
 				window.frameAPI = {
-					context: () => window.one.context(),
-					update: (k, v) => window.one.update(k, v),
-					fetch: (k, u) => window.one.zero.fetch(k, u),
-					onKey: (h) => window.one.onKey(h),
+					context: () => window.one.fx.context(),
+					update: (k, v) => window.one.fx.update(k, v),
+					fetch: (k, u) => window.one.fx.zero.fetch(k, u),
+					onKey: (h) => window.one.fx.handleKey(null, h),
 				};
 			});
 		</script>
