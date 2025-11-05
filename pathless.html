@@ -169,19 +169,17 @@
 
 				context() {
 					const layout = this.layouts[this.state.layoutIndex];
-					const visible = this.panels.slice(0, layout.panels);
 					const focused = this.panels[this.state.focusedPanel];
-
 					if (!focused.element.__state) focused.element.__state = {};
 
 					return {
 						layout,
-						visible,
+						visible: this.panels.slice(0, layout.panels),
 						focused,
 						panel: focused.element,
 						frameIndex: focused.frameIndex,
 						state: focused.element.__state,
-						visibleCount: visible.length,
+						visibleCount: layout.panels,
 					};
 				}
 
@@ -200,21 +198,16 @@
 						if (registeredHandler) registeredHandler(key);
 					}
 				}
+
 				async toggleFullscreen() {
 					if (
 						this.state.layoutIndex === 0 &&
 						this.state.previousLayout
 					) {
-						// Restore from fullscreen
-						this.state.layoutIndex =
-							this.state.previousLayout.layoutIndex;
-						this.state.variantIndex =
-							this.state.previousLayout.variantIndex;
-						this.state.focusedPanel =
-							this.state.previousLayout.focusedPanel;
-						this.state.previousLayout = null;
+						Object.assign(this.state, this.state.previousLayout, {
+							previousLayout: null,
+						});
 					} else if (this.state.layoutIndex !== 0) {
-						// Go to fullscreen
 						this.state.previousLayout = {
 							layoutIndex: this.state.layoutIndex,
 							variantIndex: this.state.variantIndex,
@@ -222,22 +215,20 @@
 						};
 						this.state.layoutIndex = 0;
 						this.state.variantIndex = 0;
-						// focusedPanel stays the same
 					}
-
-					this.updateDisplay(); // Just update visibility, don't re-render
+					await this.render();
 				}
 
 				async setLayout(index) {
 					const newLayout = this.layouts[index];
-					const oldLayout = this.layouts[this.state.layoutIndex];
+					const oldLayoutPanels =
+						this.layouts[this.state.layoutIndex].panels;
 
-					// Clear previous layout when explicitly changing
 					this.state.previousLayout = null;
-
-					if (this.state.focusedPanel >= newLayout.panels) {
-						this.state.focusedPanel = 0;
-					}
+					this.state.focusedPanel = Math.min(
+						this.state.focusedPanel,
+						newLayout.panels - 1
+					);
 
 					if (this.state.layoutIndex === index) {
 						this.state.variantIndex =
@@ -247,67 +238,56 @@
 						this.state.variantIndex = 0;
 					}
 
-					// Render panels that are newly visible and haven't been rendered yet
-					if (newLayout.panels > oldLayout.panels) {
-						const newPanels = this.panels
-							.slice(oldLayout.panels, newLayout.panels)
-							.filter((p) => !p.element.innerHTML);
-
-						if (newPanels.length > 0) {
-							await Promise.all(
-								newPanels.map((p) =>
-									this.zero.renderPanel(
-										p.element,
-										p.frameIndex
-									)
-								)
-							);
-						}
-					}
-
-					this.updateDisplay();
+					await this.render(oldLayoutPanels);
 				}
 
 				cycleFocus() {
-					const { visibleCount } = this.context();
 					this.state.focusedPanel =
-						(this.state.focusedPanel + 1) % visibleCount;
-					this.updateDisplay();
+						(this.state.focusedPanel + 1) %
+						this.context().visibleCount;
+					this.render();
 				}
 
 				async navigate(delta) {
 					const { focused } = this.context();
 					const total = this.zero.totalFrames || 1;
-					const next = (focused.frameIndex + delta + total) % total;
-
-					focused.frameIndex = next;
-					await this.zero.renderPanel(focused.element, next);
+					focused.frameIndex =
+						(focused.frameIndex + delta + total) % total;
+					await this.zero.renderPanel(
+						focused.element,
+						focused.frameIndex
+					);
 				}
 
-				updateDisplay() {
-					const { visible } = this.context();
+				async render(oldLayoutPanels = 0) {
+					const { visible, visibleCount } = this.context();
+
+					// Render newly visible empty panels
+					if (visibleCount > oldLayoutPanels) {
+						await Promise.all(
+							this.panels
+								.slice(oldLayoutPanels, visibleCount)
+								.filter((p) => !p.element.innerHTML)
+								.map((p) =>
+									this.zero.renderPanel(
+										p.element,
+										p.frameIndex
+									)
+								)
+						);
+					}
+
+					// Update layout class and visibility
 					this.app.className = `layout-${this.state.layoutIndex}-${this.state.variantIndex}`;
 					this.panels.forEach((p, i) => {
-						if (this.state.layoutIndex === 0) {
-							// In fullscreen, only show the focused panel
-							p.element.style.display =
-								i === this.state.focusedPanel ? 'flex' : 'none';
-						} else {
-							// In multi-panel layouts, show visible panels
-							p.element.style.display =
-								i < visible.length ? 'flex' : 'none';
-						}
-					});
-				}
-
-				async render() {
-					const { visible } = this.context();
-					await Promise.all(
-						visible.map((p) =>
-							this.zero.renderPanel(p.element, p.frameIndex)
+						p.element.style.display = (
+							this.state.layoutIndex === 0
+								? i === this.state.focusedPanel
+								: i < visibleCount
 						)
-					);
-					this.updateDisplay();
+							? 'flex'
+							: 'none';
+					});
 				}
 			}
 
