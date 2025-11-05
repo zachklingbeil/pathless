@@ -49,8 +49,8 @@
 				overflow: hidden;
 			}
 			.panel > * {
-				max-width: 100%;
-				object-fit: contain;
+				width: 100%;
+				height: 100%;
 			}
 			/* Single panel */
 			.layout-0-0 {
@@ -200,17 +200,6 @@
 					}
 				}
 
-				async navigate(delta) {
-					const { focused } = this.context();
-					const total = this.zero.totalFrames || 1;
-					const next =
-						(((focused.frameIndex + delta) % total) + total) %
-						total;
-
-					focused.frameIndex = next;
-					await this.renderPanel(focused.element, next);
-				}
-
 				async setLayout(index) {
 					const newLayout = this.layouts[index];
 
@@ -236,10 +225,18 @@
 					this.updateDisplay();
 				}
 
-				async renderPanel(panelElement, frameIdx) {
-					panelElement.innerHTML = await this.zero.fetchFrame(
-						frameIdx
-					);
+				async navigate(delta) {
+					const { focused } = this.context();
+					const total = this.zero.totalFrames || 1;
+					const next = (focused.frameIndex + delta + total) % total;
+
+					focused.frameIndex = next;
+					const html = await this.zero.fetchFrame(next);
+					this.renderPanel(focused.element, html);
+				}
+
+				renderPanel(panelElement, html) {
+					panelElement.innerHTML = html;
 
 					if (!panelElement.__state) panelElement.__state = {};
 
@@ -266,10 +263,11 @@
 
 				async render() {
 					const { visible } = this.context();
-					await Promise.all(
-						visible.map((p) =>
-							this.renderPanel(p.element, p.frameIndex)
-						)
+					const htmls = await Promise.all(
+						visible.map((p) => this.zero.fetchFrame(p.frameIndex))
+					);
+					visible.forEach((p, i) =>
+						this.renderPanel(p.element, htmls[i])
 					);
 					this.updateDisplay();
 				}
@@ -284,7 +282,10 @@
 				}
 
 				async fetch(key, url, options = {}) {
-					if (this.cache.has(key)) return this.cache.get(key);
+					if (this.cache.has(key)) {
+						const cached = this.cache.get(key);
+						return cached; // Return both data and headers
+					}
 					if (this.pending.has(key)) return this.pending.get(key);
 
 					const promise = fetch(url, options)
@@ -298,8 +299,9 @@
 								? await res.json()
 								: await res.text();
 
-							this.cache.set(key, data);
-							return { data, headers: res.headers };
+							const result = { data, headers: res.headers };
+							this.cache.set(key, result); // Cache both data and headers
+							return result;
 						})
 						.catch((err) => {
 							console.error(`Fetch failed for "${key}":`, err);
@@ -312,7 +314,6 @@
 				}
 
 				async fetchFrame(idx) {
-					// Initialize with frame zero
 					if (this.totalFrames === null) {
 						const { data, headers } = await this.fetch(
 							0,
@@ -321,10 +322,9 @@
 						);
 						const total = headers.get('X-Frames');
 						if (total) this.totalFrames = parseInt(total, 10);
-						if (idx === 0) return data;
+						return data;
 					}
 
-					// Return cached or fetch new
 					try {
 						const { data } = await this.fetch(idx, this.frameUrl, {
 							headers: { 'X-Frame': String(idx) },
