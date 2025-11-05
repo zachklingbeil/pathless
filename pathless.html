@@ -182,9 +182,11 @@
 
 				/* Update state on focused panel */
 				update(k, v) {
-					const el = this.focused.el;
-					if (!el.__state) el.__state = {};
-					el.__state[k] = v;
+					const f = this.focused;
+					const frameIdx = f.idx;
+					if (!f.el[frameIdx]) f.el[frameIdx] = {};
+					if (!f.el[frameIdx].__state) f.el[frameIdx].__state = {};
+					f.el[frameIdx].__state[k] = v;
 				}
 
 				/* Register or invoke key handler for current frame */
@@ -325,7 +327,8 @@
 					const html = await this.fetchFrame(i);
 					const tmp = document.createElement('div');
 					tmp.innerHTML = html;
-					if (!el.__state) el.__state = {};
+					if (!el[i]) el[i] = {};
+					if (!el[i].__state) el[i].__state = {};
 					// Re-create script/style tags to trigger execution
 					['script', 'style'].forEach((tag) => {
 						tmp.querySelectorAll(tag).forEach((old) => {
@@ -346,14 +349,18 @@
 			/* Initialize on DOM ready and expose API for frames */
 			document.addEventListener('DOMContentLoaded', () => {
 				window.one = new One();
-				window.frameAPI = {
+				window.pathless = {
 					context: () => {
 						const f = window.one.fx.focused;
-						if (!f.el.__state) f.el.__state = {};
+						const frameIdx = f.idx;
+						if (!f.el[frameIdx]) f.el[frameIdx] = {};
+						if (!f.el[frameIdx].__state)
+							f.el[frameIdx].__state = {};
 						return {
 							focused: f,
 							panel: f.el,
-							state: f.el.__state,
+							frameIndex: frameIdx,
+							state: f.el[frameIdx].__state,
 							count: window.one.fx.count,
 						};
 					},
