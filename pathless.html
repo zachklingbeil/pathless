@@ -5,9 +5,11 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>{{.Title}}</title>
 		<style>
+			/* CSS variable for consistent border styling across layouts */
 			:root {
 				--border: medium solid blue;
 			}
+			/* Reset and hide scrollbars globally */
 			* {
 				box-sizing: border-box;
 				margin: 0;
@@ -19,6 +21,7 @@
 			*::-webkit-scrollbar {
 				display: none;
 			}
+			/* Full viewport height, smooth scrolling */
 			html,
 			body {
 				height: 100vh;
@@ -28,19 +31,23 @@
 				color: white;
 				scroll-behavior: smooth;
 			}
+			/* Rounded border container */
 			body {
 				border: var(--border);
 				border-radius: 0.3125em;
 			}
+			/* Link styling */
 			a {
 				color: inherit;
 				text-decoration: underline;
 				text-align: center;
 			}
+			/* Main grid container */
 			#app {
 				height: 100vh;
 				display: grid;
 			}
+			/* Panel base styles - centered content */
 			.panel {
 				display: flex;
 				align-items: center;
@@ -52,27 +59,32 @@
 				width: 100%;
 				height: 100%;
 			}
+			/* Layout 0-0: Single fullscreen panel */
 			.layout-0-0 {
 				grid-template: 1fr / 1fr;
 			}
+			/* Layout 1-0: Two panels side-by-side */
 			.layout-1-0 {
 				grid-template: 1fr / 1fr 1fr;
 			}
 			.layout-1-0 #zero {
 				border-right: var(--border);
 			}
+			/* Layout 1-1: Two panels stacked vertically */
 			.layout-1-1 {
 				grid-template: 1fr 1fr / 1fr;
 			}
 			.layout-1-1 #zero {
 				border-bottom: var(--border);
 			}
+			/* Layout 2-x: Three panels in 2x2 grid */
 			.layout-2-0,
 			.layout-2-1,
 			.layout-2-2,
 			.layout-2-3 {
 				grid-template: 1fr 1fr / 1fr 1fr;
 			}
+			/* Layout 2-0: Left full-height, right split */
 			.layout-2-0 #zero {
 				grid-row: 1 / 3;
 				border-right: var(--border);
@@ -80,6 +92,7 @@
 			.layout-2-0 #one {
 				border-bottom: var(--border);
 			}
+			/* Layout 2-1: Top full-width, bottom split */
 			.layout-2-1 #zero {
 				grid-column: 1 / 3;
 				border-bottom: var(--border);
@@ -87,6 +100,7 @@
 			.layout-2-1 #one {
 				border-right: var(--border);
 			}
+			/* Layout 2-2: Right full-height, left split */
 			.layout-2-2 #zero {
 				grid-row: 1 / 3;
 				grid-column: 2;
@@ -95,6 +109,7 @@
 			.layout-2-2 #one {
 				border-bottom: var(--border);
 			}
+			/* Layout 2-3: Bottom full-width, top split */
 			.layout-2-3 #zero {
 				grid-row: 2;
 				grid-column: 1 / 3;
@@ -105,6 +120,7 @@
 			}
 		</style>
 		<script>
+			/* Main controller - handles keyboard input and delegates to Fx */
 			class One {
 				constructor() {
 					window.apiUrl = '{{.APIURL}}';
@@ -115,43 +131,49 @@
 					this.fx.render();
 				}
 
+				/* Route keyboard commands to appropriate actions */
 				async handleKey(e) {
 					const actions = {
-						e: () => this.fx.navigate(1),
-						q: () => this.fx.navigate(-1),
-						1: () => this.fx.toggleFullscreen(),
-						2: () => this.fx.setLayout(1),
-						3: () => this.fx.setLayout(2),
-						Tab: () => (e.preventDefault(), this.fx.cycleFocus()),
+						e: () => this.fx.navigate(1), // Next frame
+						q: () => this.fx.navigate(-1), // Previous frame
+						1: () => this.fx.toggleFullscreen(), // Toggle fullscreen
+						2: () => this.fx.setLayout(1), // 2-panel layout
+						3: () => this.fx.setLayout(2), // 3-panel layout
+						Tab: () => (e.preventDefault(), this.fx.cycleFocus()), // Cycle focus
 					};
 					actions[e.key]
 						? await actions[e.key]()
-						: this.fx.handleKey(e.key);
+						: this.fx.handleKey(e.key); // Pass to frame handler
 				}
 			}
 
+			/* Effects manager - handles layout, focus, and rendering */
 			class Fx {
 				constructor() {
 					this.zero = new Zero();
 					this.app = document.getElementById('app');
+					// Track each panel's element and frame index
 					this.panels = ['zero', 'one', 'two'].map((id) => ({
 						el: document.getElementById(id),
 						idx: 0,
 					}));
+					// Current UI state
 					this.state = {
-						layout: 0,
-						variant: 0,
-						focus: 0,
-						prev: null,
+						layout: 0, // Layout index (0-2)
+						variant: 0, // Layout variant
+						focus: 0, // Focused panel index
+						prev: null, // Previous state for fullscreen toggle
 					};
-					this.handlers = new Map();
+					this.handlers = new Map(); // Per-frame key handlers
+					// Layout configurations: p=panels, v=variants
 					this.layouts = [
-						{ p: 1, v: 1 },
-						{ p: 2, v: 2 },
-						{ p: 3, v: 4 },
+						{ p: 1, v: 1 }, // Fullscreen: 1 panel, 1 variant
+						{ p: 2, v: 2 }, // Split: 2 panels, 2 variants
+						{ p: 3, v: 4 }, // Grid: 3 panels, 4 variants
 					];
 				}
 
+				/* Get current context with focused panel info */
 				ctx() {
 					const f = this.panels[this.state.focus];
 					if (!f.el.__state) f.el.__state = {};
@@ -163,10 +185,12 @@
 					};
 				}
 
+				/* Update state on focused panel */
 				update(k, v) {
 					this.ctx().state[k] = v;
 				}
 
+				/* Register or invoke key handler for current frame */
 				handleKey(key, handler) {
 					const { panel, focused } = this.ctx();
 					const k = `${panel.id}-${focused.idx}`;
@@ -175,12 +199,15 @@
 						: this.handlers.get(k)?.(key);
 				}
 
+				/* Toggle between fullscreen and previous layout */
 				async toggleFullscreen() {
 					if (this.state.layout === 0 && this.state.prev) {
+						// Restore previous layout
 						Object.assign(this.state, this.state.prev, {
 							prev: null,
 						});
 					} else if (this.state.layout !== 0) {
+						// Save current and go fullscreen
 						this.state.prev = {
 							layout: this.state.layout,
 							variant: this.state.variant,
@@ -191,11 +218,14 @@
 					await this.render();
 				}
 
+				/* Change layout or cycle variant */
 				async setLayout(i) {
 					const old = this.layouts[this.state.layout].p;
 					const layout = this.layouts[i];
 					this.state.prev = null;
+					// Keep focus valid for new layout
 					this.state.focus = Math.min(this.state.focus, layout.p - 1);
+					// Same layout = cycle variant, else reset variant
 					this.state.layout === i
 						? (this.state.variant =
 								(this.state.variant + 1) % layout.v)
@@ -203,22 +233,27 @@
 					await this.render(old);
 				}
 
+				/* Cycle focus to next visible panel */
 				cycleFocus() {
 					this.state.focus =
 						(this.state.focus + 1) % this.ctx().count;
 					this.display();
 				}
 
+				/* Navigate frames forward/backward on focused panel */
 				async navigate(d) {
 					const f = this.ctx().focused;
 					const t = this.zero.totalFrames || 1;
+					// Modulo math ensures wrapping in both directions
 					f.idx = (((f.idx + d) % t) + t) % t;
 					await this.zero.renderPanel(f.el, f.idx);
 				}
 
+				/* Render newly visible panels */
 				async render(old = 0) {
 					const count = this.ctx().count;
 					if (count > old) {
+						// Render only empty panels that are now visible
 						await Promise.all(
 							this.panels
 								.slice(old, count)
@@ -229,11 +264,14 @@
 					this.display();
 				}
 
+				/* Update DOM to reflect current layout state */
 				display() {
 					const { layout, variant, focus } = this.state;
 					const count = this.layouts[layout].p;
 					requestAnimationFrame(() => {
+						// Apply layout class
 						this.app.className = `layout-${layout}-${variant}`;
+						// Show/hide panels based on layout and focus
 						this.panels.forEach(
 							(p, i) =>
 								(p.el.style.display = (
@@ -246,14 +284,16 @@
 				}
 			}
 
+			/* Data layer - handles fetching, caching, and rendering frames */
 			class Zero {
 				constructor() {
-					this.cache = new Map();
-					this.pending = new Map();
-					this.totalFrames = null;
+					this.cache = new Map(); // Cache fetched data
+					this.pending = new Map(); // Track in-flight requests
+					this.totalFrames = null; // Total frame count from API
 					this.url = `${window.apiUrl}/frame`;
 				}
 
+				/* Fetch with caching and deduplication */
 				async fetch(k, url, opts = {}) {
 					if (this.cache.has(k)) return this.cache.get(k);
 					if (this.pending.has(k)) return this.pending.get(k);
@@ -262,6 +302,7 @@
 						.then(async (r) => {
 							if (!r.ok) throw new Error(`HTTP ${r.status}`);
 							const t = r.headers.get('content-type') || '';
+							// Handle images, JSON, or text
 							const d = t.startsWith('image/')
 								? URL.createObjectURL(await r.blob())
 								: t.includes('json')
@@ -277,8 +318,10 @@
 					return p;
 				}
 
+				/* Fetch frame HTML by index */
 				async fetchFrame(i) {
 					if (this.totalFrames === null) {
+						// First request initializes total frame count
 						const { data, headers } = await this.fetch(0, this.url);
 						this.totalFrames = parseInt(
 							headers.get('X-Frames') || 1,
@@ -297,11 +340,13 @@
 					}
 				}
 
+				/* Render frame HTML into panel, re-executing scripts/styles */
 				async renderPanel(el, i) {
 					const html = await this.fetchFrame(i);
 					const tmp = document.createElement('div');
 					tmp.innerHTML = html;
 					if (!el.__state) el.__state = {};
+					// Re-create script/style tags to trigger execution
 					['script', 'style'].forEach((tag) => {
 						tmp.querySelectorAll(tag).forEach((old) => {
 							const n = document.createElement(tag);
@@ -312,11 +357,13 @@
 							old.replaceWith(n);
 						});
 					});
+					// Replace panel content
 					el.innerHTML = '';
 					while (tmp.firstChild) el.appendChild(tmp.firstChild);
 				}
 			}
 
+			/* Initialize on DOM ready and expose API for frames */
 			document.addEventListener('DOMContentLoaded', () => {
 				window.one = new One();
 				window.frameAPI = {
