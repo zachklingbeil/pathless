@@ -135,13 +135,8 @@
 							this.fx.cycleFocus();
 						},
 					};
-
 					const action = actions[e.key];
-					if (action) {
-						await action();
-					} else {
-						this.fx.handleKey(e.key);
-					}
+					action ? await action() : this.fx.handleKey(e.key);
 				}
 			}
 
@@ -190,13 +185,9 @@
 				handleKey(key, handler) {
 					const { panel, frameIndex } = this.context();
 					const handlerKey = `${panel.id}-${frameIndex}`;
-
-					if (handler !== undefined) {
-						this.handlers.set(handlerKey, handler);
-					} else {
-						const registeredHandler = this.handlers.get(handlerKey);
-						if (registeredHandler) registeredHandler(key);
-					}
+					handler !== undefined
+						? this.handlers.set(handlerKey, handler)
+						: this.handlers.get(handlerKey)?.(key);
 				}
 
 				async toggleFullscreen() {
@@ -220,9 +211,9 @@
 				}
 
 				async setLayout(index) {
-					const newLayout = this.layouts[index];
 					const oldLayoutPanels =
 						this.layouts[this.state.layoutIndex].panels;
+					const newLayout = this.layouts[index];
 
 					this.state.previousLayout = null;
 					this.state.focusedPanel = Math.min(
@@ -250,9 +241,11 @@
 
 				async navigate(delta) {
 					const { focused } = this.context();
-					const total = this.zero.totalFrames || 1;
 					focused.frameIndex =
-						(focused.frameIndex + delta + total) % total;
+						(focused.frameIndex +
+							delta +
+							(this.zero.totalFrames || 1)) %
+						(this.zero.totalFrames || 1);
 					await this.zero.renderPanel(
 						focused.element,
 						focused.frameIndex
@@ -260,9 +253,8 @@
 				}
 
 				async render(oldLayoutPanels = 0) {
-					const { visible, visibleCount } = this.context();
+					const { visibleCount } = this.context();
 
-					// Render newly visible empty panels
 					if (visibleCount > oldLayoutPanels) {
 						await Promise.all(
 							this.panels
@@ -277,7 +269,6 @@
 						);
 					}
 
-					// Update layout class and visibility
 					this.app.className = `layout-${this.state.layoutIndex}-${this.state.variantIndex}`;
 					this.panels.forEach((p, i) => {
 						p.element.style.display = (
@@ -300,25 +291,20 @@
 				}
 
 				async fetch(key, url, options = {}) {
-					if (this.cache.has(key)) {
-						const cached = this.cache.get(key);
-						return cached; // Return both data and headers
-					}
+					if (this.cache.has(key)) return this.cache.get(key);
 					if (this.pending.has(key)) return this.pending.get(key);
 
 					const promise = fetch(url, options)
 						.then(async (res) => {
 							if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
 							const type = res.headers.get('content-type');
 							const data = type?.startsWith('image/')
 								? URL.createObjectURL(await res.blob())
 								: type?.includes('json')
 								? await res.json()
 								: await res.text();
-
 							const result = { data, headers: res.headers };
-							this.cache.set(key, result); // Cache both data and headers
+							this.cache.set(key, result);
 							return result;
 						})
 						.catch((err) => {
@@ -335,8 +321,7 @@
 					if (this.totalFrames === null) {
 						const { data, headers } = await this.fetch(
 							0,
-							this.frameUrl,
-							{}
+							this.frameUrl
 						);
 						const total = headers.get('X-Frames');
 						if (total) this.totalFrames = parseInt(total, 10);
@@ -354,10 +339,7 @@
 				}
 
 				async renderPanel(panelElement, frameIndex) {
-					const html = await this.fetchFrame(frameIndex);
-
-					panelElement.innerHTML = html;
-
+					panelElement.innerHTML = await this.fetchFrame(frameIndex);
 					if (!panelElement.__state) panelElement.__state = {};
 
 					['script', 'style'].forEach((tag) => {
