@@ -200,7 +200,6 @@
 						if (registeredHandler) registeredHandler(key);
 					}
 				}
-
 				async toggleFullscreen() {
 					if (
 						this.state.layoutIndex === 0 &&
@@ -226,11 +225,12 @@
 						// focusedPanel stays the same
 					}
 
-					await this.render();
+					this.updateDisplay(); // Just update visibility, don't re-render
 				}
 
 				async setLayout(index) {
 					const newLayout = this.layouts[index];
+					const oldLayout = this.layouts[this.state.layoutIndex];
 
 					// Clear previous layout when explicitly changing
 					this.state.previousLayout = null;
@@ -247,7 +247,25 @@
 						this.state.variantIndex = 0;
 					}
 
-					await this.render();
+					// Render panels that are newly visible and haven't been rendered yet
+					if (newLayout.panels > oldLayout.panels) {
+						const newPanels = this.panels
+							.slice(oldLayout.panels, newLayout.panels)
+							.filter((p) => !p.element.innerHTML);
+
+						if (newPanels.length > 0) {
+							await Promise.all(
+								newPanels.map((p) =>
+									this.zero.renderPanel(
+										p.element,
+										p.frameIndex
+									)
+								)
+							);
+						}
+					}
+
+					this.updateDisplay();
 				}
 
 				cycleFocus() {
