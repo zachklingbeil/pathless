@@ -152,62 +152,56 @@
 				constructor() {
 					this.zero = new Zero();
 					this.app = document.getElementById('app');
-					// Track each panel's element and frame index
 					this.panels = ['zero', 'one', 'two'].map((id) => ({
 						el: document.getElementById(id),
 						idx: 0,
 					}));
-					// Current UI state
 					this.state = {
-						layout: 0, // Layout index (0-2)
-						variant: 0, // Layout variant
-						focus: 0, // Focused panel index
-						prev: null, // Previous state for fullscreen toggle
+						layout: 0,
+						variant: 0,
+						focus: 0,
+						prev: null,
 					};
-					this.handlers = new Map(); // Per-frame key handlers
-					// Layout configurations: p=panels, v=variants
+					this.handlers = new Map();
 					this.layouts = [
-						{ p: 1, v: 1 }, // Fullscreen: 1 panel, 1 variant
-						{ p: 2, v: 2 }, // Split: 2 panels, 2 variants
-						{ p: 3, v: 4 }, // Grid: 3 panels, 4 variants
+						{ p: 1, v: 1 },
+						{ p: 2, v: 2 },
+						{ p: 3, v: 4 },
 					];
 				}
 
-				/* Get current context with focused panel info */
-				ctx() {
-					const f = this.panels[this.state.focus];
-					if (!f.el.__state) f.el.__state = {};
-					return {
-						focused: f,
-						panel: f.el,
-						state: f.el.__state,
-						count: this.layouts[this.state.layout].p,
-					};
+				/* Get focused panel */
+				get focused() {
+					return this.panels[this.state.focus];
+				}
+
+				/* Get panel count for current layout */
+				get count() {
+					return this.layouts[this.state.layout].p;
 				}
 
 				/* Update state on focused panel */
 				update(k, v) {
-					this.ctx().state[k] = v;
+					const el = this.focused.el;
+					if (!el.__state) el.__state = {};
+					el.__state[k] = v;
 				}
 
 				/* Register or invoke key handler for current frame */
 				handleKey(key, handler) {
-					const { panel, focused } = this.ctx();
-					const k = `${panel.id}-${focused.idx}`;
+					const f = this.focused;
+					const k = `${f.el.id}-${f.idx}`;
 					handler
 						? this.handlers.set(k, handler)
 						: this.handlers.get(k)?.(key);
 				}
 
-				/* Toggle between fullscreen and previous layout */
 				async toggleFullscreen() {
 					if (this.state.layout === 0 && this.state.prev) {
-						// Restore previous layout
 						Object.assign(this.state, this.state.prev, {
 							prev: null,
 						});
 					} else if (this.state.layout !== 0) {
-						// Save current and go fullscreen
 						this.state.prev = {
 							layout: this.state.layout,
 							variant: this.state.variant,
@@ -218,14 +212,11 @@
 					await this.render();
 				}
 
-				/* Change layout or cycle variant */
 				async setLayout(i) {
 					const old = this.layouts[this.state.layout].p;
 					const layout = this.layouts[i];
 					this.state.prev = null;
-					// Keep focus valid for new layout
 					this.state.focus = Math.min(this.state.focus, layout.p - 1);
-					// Same layout = cycle variant, else reset variant
 					this.state.layout === i
 						? (this.state.variant =
 								(this.state.variant + 1) % layout.v)
@@ -233,30 +224,23 @@
 					await this.render(old);
 				}
 
-				/* Cycle focus to next visible panel */
 				cycleFocus() {
-					this.state.focus =
-						(this.state.focus + 1) % this.ctx().count;
+					this.state.focus = (this.state.focus + 1) % this.count;
 					this.display();
 				}
 
-				/* Navigate frames forward/backward on focused panel */
 				async navigate(d) {
-					const f = this.ctx().focused;
+					const f = this.focused;
 					const t = this.zero.totalFrames || 1;
-					// Modulo math ensures wrapping in both directions
 					f.idx = (((f.idx + d) % t) + t) % t;
 					await this.zero.renderPanel(f.el, f.idx);
 				}
 
-				/* Render newly visible panels */
 				async render(old = 0) {
-					const count = this.ctx().count;
-					if (count > old) {
-						// Render only empty panels that are now visible
+					if (this.count > old) {
 						await Promise.all(
 							this.panels
-								.slice(old, count)
+								.slice(old, this.count)
 								.filter((p) => !p.el.innerHTML)
 								.map((p) => this.zero.renderPanel(p.el, p.idx))
 						);
@@ -264,18 +248,14 @@
 					this.display();
 				}
 
-				/* Update DOM to reflect current layout state */
 				display() {
 					const { layout, variant, focus } = this.state;
-					const count = this.layouts[layout].p;
 					requestAnimationFrame(() => {
-						// Apply layout class
 						this.app.className = `layout-${layout}-${variant}`;
-						// Show/hide panels based on layout and focus
 						this.panels.forEach(
 							(p, i) =>
 								(p.el.style.display = (
-									layout === 0 ? i === focus : i < count
+									layout === 0 ? i === focus : i < this.count
 								)
 									? 'flex'
 									: 'none')
@@ -367,7 +347,16 @@
 			document.addEventListener('DOMContentLoaded', () => {
 				window.one = new One();
 				window.frameAPI = {
-					context: () => window.one.fx.ctx(),
+					context: () => {
+						const f = window.one.fx.focused;
+						if (!f.el.__state) f.el.__state = {};
+						return {
+							focused: f,
+							panel: f.el,
+							state: f.el.__state,
+							count: window.one.fx.count,
+						};
+					},
 					update: (k, v) => window.one.fx.update(k, v),
 					fetch: (k, u) => window.one.fx.zero.fetch(k, u),
 					onKey: (h) => window.one.fx.handleKey(null, h),
