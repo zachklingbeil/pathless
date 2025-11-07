@@ -272,9 +272,12 @@
 					this.url = `${window.apiUrl}/frame`;
 				}
 
-				async fetch(k, url, opts = {}) {
-					if (this.cache.has(k)) return this.cache.get(k);
-					if (this.pending.has(k)) return this.pending.get(k);
+				async fetch(url, opts = {}) {
+					const k = opts.key;
+					if (k !== undefined) {
+						if (this.cache.has(k)) return this.cache.get(k);
+						if (this.pending.has(k)) return this.pending.get(k);
+					}
 
 					const p = fetch(url, opts)
 						.then(async (r) => {
@@ -286,30 +289,32 @@
 								? await r.json()
 								: await r.text();
 							const res = { data, headers: r.headers };
-							this.cache.set(k, res);
+							if (k !== undefined) this.cache.set(k, res);
 							return res;
 						})
-						.finally(() => this.pending.delete(k));
+						.finally(() => {
+							if (k !== undefined) this.pending.delete(k);
+						});
 
-					this.pending.set(k, p);
+					if (k !== undefined) this.pending.set(k, p);
 					return p;
 				}
 
 				async fetchFrame(i) {
 					if (this.totalFrames === null) {
-						const { data, headers } = await this.fetch(0, this.url);
+						const res = await this.fetch(this.url, { key: 0 });
 						this.totalFrames = parseInt(
-							headers.get('X-Frames') || 1,
+							res.headers.get('X-Frames') || '1',
 							10
 						);
-						return data;
+						return res.data;
 					}
 					try {
-						return (
-							await this.fetch(i, this.url, {
-								headers: { 'X-Frame': String(i) },
-							})
-						).data;
+						const res = await this.fetch(this.url, {
+							headers: { 'X-Frame': String(i) },
+							key: i,
+						});
+						return res.data;
 					} catch (e) {
 						return `<div>Error: ${e.message}</div>`;
 					}
@@ -344,10 +349,9 @@
 						panel: window.one.fx.panel,
 						frame: window.one.fx.frame,
 						state: window.one.fx.getState(),
-						count: window.one.fx.count,
 					}),
 					update: (k, v) => window.one.fx.update(k, v),
-					fetch: (k, u) => window.one.fx.zero.fetch(k, u),
+					fetch: (url, opts) => window.one.fx.zero.fetch(url, opts),
 					onKey: (h) => window.one.fx.handleKey(null, h),
 				};
 			});
