@@ -190,7 +190,6 @@
 				}
 
 				async setLayout(i) {
-					const oldCount = this.count;
 					this.prev = null;
 					this.focus = Math.min(this.focus, i);
 					const numVariants = this.variants[i] + 1;
@@ -202,7 +201,7 @@
 					} else {
 						this.layout = [i, 0];
 					}
-					await this.render(oldCount);
+					await this.render();
 				}
 
 				cycleFocus() {
@@ -214,18 +213,36 @@
 					const t = this.zero.totalFrames || 1;
 					const panel = this.panels[this.focus];
 					panel.frame = (((panel.frame + d) % t) + t) % t;
-					await this.zero.renderPanel(panel, panel.frame);
+					await this.render();
 				}
 
-				async render(old = 0) {
-					if (this.count > old) {
-						await Promise.all(
-							this.panels
-								.slice(old, this.count)
-								.filter((p) => !p.innerHTML)
-								.map((p) => this.zero.renderPanel(p, p.frame))
-						);
+				async render() {
+					const updates = [];
+					for (let i = 0; i < this.count; i++) {
+						const panel = this.panels[i];
+						const html = await this.zero.fetchFrame(panel.frame);
+						if (panel._lastHtml !== html) {
+							const tmp = document.createElement('div');
+							tmp.innerHTML = html;
+							['script', 'style'].forEach((tag) => {
+								tmp.querySelectorAll(tag).forEach((old) => {
+									const n = document.createElement(tag);
+									[...old.attributes].forEach((a) =>
+										n.setAttribute(a.name, a.value)
+									);
+									n.textContent = old.textContent;
+									old.replaceWith(n);
+								});
+							});
+							const frag = document.createDocumentFragment();
+							[...tmp.childNodes].forEach((node) =>
+								frag.appendChild(node)
+							);
+							updates.push(() => panel.replaceChildren(frag));
+							panel._lastHtml = html;
+						}
 					}
+					updates.forEach((fn) => fn());
 					this.display();
 				}
 
@@ -301,23 +318,6 @@
 					} catch (e) {
 						return `<div>Error: ${e.message}</div>`;
 					}
-				}
-
-				async renderPanel(el, i) {
-					const html = await this.fetchFrame(i);
-					const tmp = document.createElement('div');
-					tmp.innerHTML = html;
-					['script', 'style'].forEach((tag) => {
-						tmp.querySelectorAll(tag).forEach((old) => {
-							const n = document.createElement(tag);
-							[...old.attributes].forEach((a) =>
-								n.setAttribute(a.name, a.value)
-							);
-							n.textContent = old.textContent;
-							old.replaceWith(n);
-						});
-					});
-					el.replaceChildren(...tmp.childNodes);
 				}
 			}
 
