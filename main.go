@@ -28,6 +28,8 @@ func init() {
 		apiURL = "https://" + apiURL
 	}
 
+	favicon := apiURL + "/img/favicon"
+
 	pathless, err := template.New("pathless").Parse(zero)
 	if err != nil {
 		panic("template parse error: " + err.Error())
@@ -35,8 +37,9 @@ func init() {
 
 	var b strings.Builder
 	if err := pathless.Execute(&b, map[string]string{
-		"Title":  title,
-		"APIURL": apiURL,
+		"Title":   title,
+		"APIURL":  apiURL,
+		"Favicon": favicon,
 	}); err != nil {
 		panic("template execute error: " + err.Error())
 	}
