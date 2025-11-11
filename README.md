@@ -1,35 +1,49 @@
 # pathless
 
-Zero-dependency viewport allocator. 
+Zero-dependency viewport allocator served within a pathless domain. 
 
 ## Overview
 
-**pathless** delivers rich, interactive experiences from a single domain (e.g., `timefactory.io`), without exposing internal content paths. Requests can only be served from `/`. All requests to paths/queries are automatically redirected back to `/`, ensuring the peer facing URL remains clean. Content is dynamically allocated to responsive panels, providing a distraction-free interface with no scrollbars. sit behind a reverse proxy, delivers a full 
+Within **pathless**, the viewport is a closed system with limits defined by a perimeter border. **pathless** establishes an unobstructed interface with two universal components:
 
-- **Responsive panels** - Frames auto-scale with CSS `object-fit: contain`
-- **Zero scrollbars** - Clean, distraction-free interface
+ - `panel`: space in the system
+ - `frame`: object in space 
+ - `state`: position of an object in space
 
-frames are a finite pool of simulataneously observable html content, cached after first fetch. state is managed panel -> frame -> state. 
 
-## `window.pathless`
+## Getting Started
 
-The `window.pathless` object provides the API facilitating interaction between `panels` (viewport) and `frames` (html/js/css).    
+| Key   | Action         | Toggle                                     |
+| ----- | -------------- | ------------------------------------------ |
+| `1`   | One panel      | fullscreen <-> previous layout             |
+| `2`   | Two panel      | horizontal <-> vertical                    |
+| `3`   | Three panel    | large panel left -> top -> right -> bottom |
+| `Tab` | Cycle focus    | panel zero -> one -> two                   |
+| `q`   | previous frame |                                            |
+| `e`   | next frame     |                                            |
+
+## Installation
+
+## Documentation
+
+`panel`'s
+
+`frame`'s are a finite pool of simulataneously observable content, cached after first fetch. state is managed panel -> frame -> state. 
+
+`state`
+
+When in a multipanel layout, press `1` to make the focused panel fullscreen, press `1` again to return to the previous layout. Press `2` to toggle between side-by-side (vertical split) and stacked (horizontal split). Press `3` to cycle through 50/25/25 layouts.
+
+The `window.pathless` object provides the API coordinating between `panels`, `frames`, and `state`.    
 
 #### `pathless.context()`
-Returns the DOM element of the focused panel, its current frame, and its panel specific state.
+Returns the DOM element of the focused panel, DOM element of the current frame, and panel specific frame state.
 
-#### `pathless.update(key, value)`
-
-Automatically detects the focused panel and current frame, uses key-value pair's to save and restore state across navigation and layout changes.
-
-#### `pathless.fetch(url, opts)`
-Fetches data from `url` (string) with standard fetch `opts` (object, optional). Returns a promise resolving to `{ data, headers }`. 
-
-- `data`: Parsed response (blob URL for images, JSON for JSON responses, text otherwise)
-- `headers`: Response headers object
-
-Caching and request deduplication available via `opts.key`. 
+#### `pathless.fetch(url, opts)`  
+Returns the parsed response `{ data, headers }`. Caching and request deduplication available using `opts.key` where a single successful round-trip makes a `value` available to all panels.
 
 #### `pathless.onKey(handler)`
+Event handler used to register `frame` keybinds, automatically scoped to the focused panel.
 
-Event handler used to register keybinds in frames, automatically scoped to the focused panel.
+#### `pathless.update(key, value)`
+Key-value pair's used to persist state through layout changes and navigation, automatically scoped to the `frame` of the focused `panel`.

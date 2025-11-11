@@ -23,7 +23,7 @@ func init() {
 		title = "hello_universe"
 	}
 	if apiURL == "" {
-		apiURL = "http://localhost:1002"
+		apiURL = "http://localhost:1001"
 	} else if !strings.HasPrefix(apiURL, "http://") && !strings.HasPrefix(apiURL, "https://") {
 		apiURL = "https://" + apiURL
 	}
@@ -55,7 +55,7 @@ func Pathless(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	http.HandleFunc("/", Pathless)
-	http.ListenAndServe(":1001", nil)
+	http.ListenAndServe(":1000", nil)
 }
 
 func minify(html string) []byte {

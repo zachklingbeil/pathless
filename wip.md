@@ -1,6 +1,25 @@
+# pathless
+
+Zero-dependency viewport allocator. 
+
+
+## Installation
+
+
+## Overview
+
+**pathless** delivers rich, interactive experiences from a single domain (e.g., `timefactory.io`), without exposing internal content paths. Requests can only be served from `/`. All requests to paths/queries are automatically redirected back to `/`, ensuring the peer facing URL remains clean. Content is dynamically allocated to responsive panels, providing a distraction-free interface with no scrollbars. sit behind a reverse proxy, delivers a full 
+
+- **Responsive panels** - Frames auto-scale with CSS `object-fit: contain`
+- **Zero scrollbars** - Clean, distraction-free interface
+
+frames are a finite pool of simulataneously observable html content, cached after first fetch. state is managed panel -> frame -> state. 
+
 ## Architecture
 
 Pathless is a lightweight Go HTTP server that embeds a sophisticated client-side frame viewer. The server processes, minifies, and compresses an HTML template once at startup, then serves it from memory with maximum efficiency.
+
+- All requests to paths/queries are automatically redirected back to `/`.
 
 **Server responsibilities:**
 - Embed and process HTML template at compile time
@@ -96,3 +115,13 @@ All processing happens **once** during initialization, making subsequent request
 - Efficient DOM updates via `requestAnimationFrame`
 - Script re-execution on panel update
 
+# production
+
+## Environment Variables
+
+| Variable  | Default                   | Description                     |
+| --------- | ------------------------- | ------------------------------- |
+| `TITLE`   | `"hello_universe"`        | Page title shown in browser tab |
+| `API_URL` | `"http://localhost:1002"` | Base URL for frame API endpoint |
+
+# development
