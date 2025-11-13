@@ -24,6 +24,10 @@ Within **pathless**, the viewport is a closed system with limits defined by a pe
 
 ## Installation
 
+![alt text](./content/layout.gif)
+
+![alt text](./content/nav.gif)
+
 ## Documentation
 
 `panel`'s
