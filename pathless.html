@@ -150,7 +150,7 @@
 					this.panels = ['zero', 'one', 'two'].map((id) => {
 						const el = document.getElementById(id);
 						el.frame = 0;
-						el.state = {};
+						el.state = new Map();
 						return el;
 					});
 					this.layout = [0, 0];
@@ -168,8 +168,17 @@
 					return this.layout[0] + 1;
 				}
 
+				get state() {
+					const panel = this.panel;
+					const frame = panel.frame;
+					return panel.state.get(frame) || {};
+				}
+
 				update(k, v) {
-					this.panel.state[k] = v;
+					const panel = this.panel;
+					const frame = panel.frame;
+					if (!panel.state.has(frame)) panel.state.set(frame, {});
+					panel.state.get(frame)[k] = v;
 				}
 
 				handleKey(key, handler) {
@@ -328,7 +337,7 @@
 					context: () => ({
 						panel: window.one.fx.panel,
 						frame: window.one.fx.panel.firstElementChild,
-						state: window.one.fx.panel.state,
+						state: window.one.fx.state,
 					}),
 					update: (k, v) => window.one.fx.update(k, v),
 					fetch: (url, opts) => window.one.fx.zero.fetch(url, opts),
