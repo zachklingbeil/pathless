@@ -24,7 +24,6 @@ Within **pathless**, the viewport is a closed system with limits defined by a pe
 
 ## Installation
 
-
 ![layouts](./content/layout.gif)
 ![nav](./content/nav.gif)
 

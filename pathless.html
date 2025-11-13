@@ -6,11 +6,9 @@
 		<title>{{.Title}}</title>
 		<link rel="icon" type="image/" href="{{.Favicon}}" />
 		<style>
-			/* CSS variable for consistent border styling across layouts */
 			:root {
 				--border: medium solid blue;
 			}
-			/* Reset and hide scrollbars globally */
 			* {
 				box-sizing: border-box;
 				margin: 0;
@@ -22,33 +20,28 @@
 			*::-webkit-scrollbar {
 				display: none;
 			}
-			/* Full viewport height, smooth scrolling */
 			html,
 			body {
 				height: 100vh;
 				overflow: hidden;
-				font-family: 'Roboto', sans-serif;
+				font-family: sans-serif, monospace;
 				background: black;
 				color: white;
 				scroll-behavior: smooth;
 			}
-			/* Rounded border container */
 			body {
 				border: var(--border);
 				border-radius: 0.3125em;
 			}
-			/* Link styling */
 			a {
 				color: inherit;
 				text-decoration: underline;
 				text-align: center;
 			}
-			/* Main grid container */
 			#app {
 				height: 100vh;
 				display: grid;
 			}
-			/* Panel base styles - centered content */
 			.panel {
 				display: flex;
 				align-items: center;
