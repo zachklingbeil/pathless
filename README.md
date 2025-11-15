@@ -1,6 +1,6 @@
 # pathless
 
-Zero-dependency viewport allocator served within a pathless domain. 
+Frictionless viewport allocator served within a pathless domain. 
 
 ## Overview
 
@@ -40,7 +40,7 @@ When in a multipanel layout, press `1` to make the focused panel fullscreen, pre
 The `window.pathless` object provides the API coordinating between `panels`, `frames`, and `state`.    
 
 #### `pathless.context()`
-Returns the DOM element of the focused panel, DOM element of the current frame, and panel specific frame state.
+Returns the DOM element of the focused panel, DOM element of the current frame, and panel specifasdasdasdic frame state.
 
 #### `pathless.fetch(url, opts)`  
 Returns the parsed response `{ data, headers }`. Caching and request deduplication available using `opts.key` where a single successful round-trip makes a `value` available to all panels.
