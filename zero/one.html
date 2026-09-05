@@ -4,89 +4,65 @@
 
 <script>
 	class Universe {
+		#plane;
+		#previous = null;
 		#rendering = null;
 
 		constructor() {
 			this.el = document.getElementById('universe');
+			this.#plane = this.el.getBoundingClientRect();
+			new ResizeObserver(() => {
+				this.#plane = this.el.getBoundingClientRect();
+			}).observe(this.el);
 			this.spaces = ['zero', 'one', 'two'].map((id) => ({
 				el: document.getElementById(id),
 				frame: 0,
-				state: [],
+				states: [],
 			}));
-			this.layouts = [null, this.spaces.slice(0, 2), this.spaces.slice()];
-			this.variants = [1, 2, 4];
-			this.previous = null;
-			this.state = [0, 0, 0]; // layout, variant, focused
-			this.stateLength = [3, 4, 3];
-			this.input = new Input(this);
+			this.layouts = [
+				{ spaces: null, variants: [0] },
+				{ spaces: this.spaces.slice(0, 2), variants: [0, 1] },
+				{ spaces: this.spaces.slice(), variants: [0, 1, 2, 3] },
+			];
+			// this.input = new Input(this);
 		}
 
-		get l() {
-			return Number(this.el.dataset.layout);
-		}
-		set l(value) {
-			this.el.dataset.layout = value;
-		}
-		get v() {
-			return Number(this.el.dataset.variant);
-		}
-		set v(value) {
-			this.el.dataset.variant = value;
-		}
-
-		get active() {
-			return Number(this.el.dataset.focused);
-		}
-		set active(index) {
-			this.el.dataset.focused = index;
+		get #state() {
+			const { layout, variant, focused } = this.el.dataset;
+			return [layout, variant, focused].map(Number);
 		}
 		get space() {
-			return this.#rendering ?? this.spaces[this.active];
-		}
-		set space(space) {
-			this.active = this.spaces.indexOf(space);
+			return this.#rendering ?? this.spaces[this.#state[2]];
 		}
 		get visible() {
-			if (!this.l) return [this.space];
-			if (this.l === 1 && this.space === this.spaces[2])
-				return [this.spaces[0], this.space];
-			return this.layouts[this.l];
+			const [layout, , focused] = this.#state;
+			if (!layout) return [this.spaces[focused]];
+			if (layout === 1 && focused === 2)
+				return [this.spaces[0], this.spaces[2]];
+			return this.layouts[layout].spaces;
 		}
 		get frame() {
-			return this.space.el.querySelector('div');
+			return this.space.el.querySelector(':scope > div');
 		}
 
-		move(index, direction, length, wrap = true) {
-			const next = index + direction;
-			return wrap
-				? ((next % length) + length) % length
-				: Math.max(0, Math.min(next, length - 1));
-		}
-
-		read() {
-			return (this.space.state[this.space.frame] ??= new Map());
-		}
-
-		write(key, value) {
-			this.read().set(key, value);
-		}
-
-		pin() {
-			const state = this.read();
+		coordinate({ clientX, clientY }) {
+			const { left, top, width, height } = this.#plane;
 			return {
-				read: () => state,
-				write: (key, value) => state.set(key, value),
+				x: (2 * (clientX - left)) / (width || 1) - 1,
+				y: 1 - (2 * (clientY - top)) / (height || 1),
 			};
 		}
 
+		state() {
+			const space = this.space;
+			return (space.states[space.frame] ??= new Map());
+		}
+
 		sync(space) {
-			const visible = this.visible;
-			if (!visible.includes(this.space)) this.space = visible[0];
-			if (!pathless.frames?.length) return;
 			try {
-				for (const current of space ? [space] : visible) {
+				for (const current of space ? [space] : this.visible) {
 					this.#rendering = current;
-					this.input.clear(current);
+					// this.input.clear(current);
 					pathless.exec(current.el, pathless.frames[current.frame]);
 				}
 			} finally {
@@ -94,46 +70,38 @@
 			}
 		}
 
-		nav(step) {
-			return (space = this.space) => {
-				if (!pathless.frames?.length) return;
-				space.frame = this.move(
-					space.frame,
-					step,
-					pathless.frames.length,
-				);
-				this.sync(space);
-				return space.frame;
-			};
+		frames(frame, space = this.space) {
+			if (frame === undefined) return [space.frame, pathless.frames];
+			space.frame = frame;
+			this.sync(space);
+			return frame;
 		}
 
-		syncLayout(layout = 0, variant = 0, wrap = true) {
-			const previous = [this.l, this.v];
-			this.l = this.move(this.l, layout, this.layouts.length, wrap);
-			this.v = this.move(this.v, variant, this.variants[this.l], wrap);
-			if (previous[0] !== this.l) this.previous = previous;
+		view(layout, variant = 0) {
+			if (layout === undefined) {
+				const [layout, variant] = this.#state;
+				return [layout, variant, this.layouts];
+			}
+			const [currentLayout, currentVariant] = this.#state;
+			if (layout > 0) this.#previous = [layout, variant];
+			else if (currentLayout > 0)
+				this.#previous = [currentLayout, currentVariant];
+			this.el.dataset.layout = layout;
+			this.el.dataset.variant = variant;
 			this.sync();
-			return [this.l, this.v];
+			return [layout, variant];
 		}
 
-		layout(step = 1, wrap = true) {
-			return (space = this.space) => {
-				this.space = space;
-				return this.syncLayout(step, 0, wrap);
-			};
-		}
-
-		variant(step = 1, wrap = true) {
-			return () => this.syncLayout(0, step, wrap);
-		}
-
-		focus(step = 1) {
-			const visible = this.visible;
-			this.space =
-				visible[
-					this.move(visible.indexOf(this.space), step, visible.length)
-				];
-			return this.active;
+		focus(space) {
+			const current = this.space;
+			if (space === undefined) return [current, this.visible];
+			if (space === current) {
+				const [layout] = this.#state;
+				if (layout > 0) return this.view(0);
+				if (this.#previous) return this.view(...this.#previous);
+			}
+			this.el.dataset.focused = this.spaces.indexOf(space);
+			return space;
 		}
 	}
 </script>
