@@ -7,24 +7,21 @@
 		#plane;
 		#previous = null;
 		#rendering = null;
-
 		constructor() {
 			this.el = document.getElementById('universe');
 			this.#plane = this.el.getBoundingClientRect();
 			new ResizeObserver(() => {
 				this.#plane = this.el.getBoundingClientRect();
 			}).observe(this.el);
-			this.spaces = ['zero', 'one', 'two'].map((id) => ({
-				el: document.getElementById(id),
-				frame: 0,
-				states: [],
-			}));
+			this.spaces = Array.from(
+				this.el.querySelectorAll(':scope > .space'),
+				(el) => ({ el, frame: 0, states: [] }),
+			);
 			this.layouts = [
-				{ spaces: null, variants: [0] },
-				{ spaces: this.spaces.slice(0, 2), variants: [0, 1] },
-				{ spaces: this.spaces.slice(), variants: [0, 1, 2, 3] },
+				{ variants: [0] },
+				{ variants: [0, 1] },
+				{ variants: [0, 1, 2, 3] },
 			];
-			// this.input = new Input(this);
 		}
 
 		get #state() {
@@ -34,15 +31,13 @@
 		get space() {
 			return this.#rendering ?? this.spaces[this.#state[2]];
 		}
-		get visible() {
-			const [layout, , focused] = this.#state;
-			if (!layout) return [this.spaces[focused]];
-			if (layout === 1 && focused === 2)
-				return [this.spaces[0], this.spaces[2]];
-			return this.layouts[layout].spaces;
-		}
 		get frame() {
 			return this.space.el.querySelector(':scope > div');
+		}
+		get visible() {
+			return this.spaces.filter(
+				({ el }) => getComputedStyle(el).display !== 'none',
+			);
 		}
 
 		coordinate({ clientX, clientY }) {
@@ -62,7 +57,6 @@
 			try {
 				for (const current of space ? [space] : this.visible) {
 					this.#rendering = current;
-					// this.input.clear(current);
 					pathless.exec(current.el, pathless.frames[current.frame]);
 				}
 			} finally {
@@ -78,11 +72,9 @@
 		}
 
 		view(layout, variant = 0) {
-			if (layout === undefined) {
-				const [layout, variant] = this.#state;
-				return [layout, variant, this.layouts];
-			}
 			const [currentLayout, currentVariant] = this.#state;
+			if (layout === undefined)
+				return [currentLayout, currentVariant, this.layouts];
 			if (layout > 0) this.#previous = [layout, variant];
 			else if (currentLayout > 0)
 				this.#previous = [currentLayout, currentVariant];
@@ -101,6 +93,7 @@
 				if (this.#previous) return this.view(...this.#previous);
 			}
 			this.el.dataset.focused = this.spaces.indexOf(space);
+			this.sync();
 			return space;
 		}
 	}

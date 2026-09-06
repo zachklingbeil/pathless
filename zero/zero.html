@@ -78,8 +78,7 @@
 			#universe[data-layout='0'] .space {
 				display: none;
 			}
-			#universe[data-layout='1'][data-focused='0'] #two,
-			#universe[data-layout='1'][data-focused='1'] #two,
+			#universe[data-layout='1']:not([data-focused='2']) #two,
 			#universe[data-layout='1'][data-focused='2'] #one {
 				display: none;
 			}
@@ -117,34 +116,24 @@
 			);
 			class Pathless {
 				#cache = new Map();
-
-				static #td = new TextDecoder();
-				static #range = document.createRange();
+				static #decoder = new TextDecoder();
+				static #range = new Range();
 
 				static decode(bytes) {
 					let offset = 0;
-
 					const uvarint = () => {
 						let value = 0;
-						let shift = 0;
-						let byte;
-
-						do {
-							byte = bytes[offset++];
+						for (let shift = 0; ; shift += 7) {
+							const byte = bytes[offset++];
 							value += (byte & 0x7f) * 2 ** shift;
-							shift += 7;
-						} while (byte & 0x80);
-						return value >>> 0;
+							if (!(byte & 0x80)) return value >>> 0;
+						}
 					};
-
 					const field = () => {
 						const length = uvarint();
-						const start = offset;
-						offset += length;
-						return bytes.subarray(start, offset);
+						return bytes.subarray(offset, (offset += length));
 					};
-
-					const text = () => Pathless.#td.decode(field());
+					const text = () => Pathless.#decoder.decode(field());
 					const ones = () =>
 						Array.from({ length: uvarint() }, () => ({
 							name: text(),
@@ -159,10 +148,8 @@
 					const cached = this.#cache.get(path);
 					if (cached) return cached;
 					const request = fetch(`${circuit}/${path}`)
-						.then((response) => response.arrayBuffer())
-						.then((buffer) =>
-							Pathless.decode(new Uint8Array(buffer)),
-						)
+						.then((response) => response.bytes())
+						.then(Pathless.decode)
 						.catch((error) => {
 							this.#cache.delete(path);
 							throw error;
@@ -172,40 +159,35 @@
 				}
 
 				url(entry) {
-					let value = this.#cache.get(entry);
-					if (!value) {
-						value = URL.createObjectURL(
-							new Blob([entry.data], { type: entry.type }),
-						);
-						this.#cache.set(entry, value);
-					}
-					return value;
+					const cached = this.#cache.get(entry);
+					if (cached) return cached;
+					const url = URL.createObjectURL(
+						new Blob([entry.data], { type: entry.type }),
+					);
+					this.#cache.set(entry, url);
+					return url;
 				}
 
 				exec(el, data) {
 					el.replaceChildren(
 						Pathless.#range.createContextualFragment(
-							Pathless.#td.decode(data),
+							Pathless.#decoder.decode(data),
 						),
 					);
 				}
 
 				async init() {
-					const [root, frames] = await this.source('');
+					const [zero, frames] = await this.source('');
 					this.frames = frames.ones.map(({ data }) => data);
-
 					if (!this.frames.length) return;
-
-					this.exec(document.getElementById('universe'), root.data);
+					this.exec(document.getElementById('universe'), zero.data);
 					this.universe = new Universe();
-					this.input = this.universe.input;
 					this.universe.sync();
 				}
 			}
-			document.addEventListener('DOMContentLoaded', async () => {
-				const pathless = (window.pathless = new Pathless());
-				await pathless.init();
-			});
+			document.addEventListener('DOMContentLoaded', () =>
+				(window.pathless = new Pathless()).init(),
+			);
 		</script>
 	</head>
 	<body>
