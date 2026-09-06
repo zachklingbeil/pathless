@@ -64,37 +64,64 @@
 			}
 		}
 
-		frames(frame, space = this.space) {
-			if (frame === undefined) return [space.frame, pathless.frames];
+		#frames(frame, space = this.space) {
 			space.frame = frame;
-			this.sync(space);
 			return frame;
 		}
 
-		view(layout, variant = 0) {
+		#view(layout, variant = 0) {
 			const [currentLayout, currentVariant] = this.#state;
-			if (layout === undefined)
-				return [currentLayout, currentVariant, this.layouts];
 			if (layout > 0) this.#previous = [layout, variant];
 			else if (currentLayout > 0)
 				this.#previous = [currentLayout, currentVariant];
 			this.el.dataset.layout = layout;
 			this.el.dataset.variant = variant;
-			this.sync();
 			return [layout, variant];
 		}
 
-		focus(space) {
-			const current = this.space;
-			if (space === undefined) return [current, this.visible];
-			if (space === current) {
-				const [layout] = this.#state;
-				if (layout > 0) return this.view(0);
-				if (this.#previous) return this.view(...this.#previous);
-			}
+		#focus(space) {
 			this.el.dataset.focused = this.spaces.indexOf(space);
-			this.sync();
 			return space;
+		}
+
+		navigate(direction) {
+			const space = this.space;
+			const frame =
+				(space.frame + direction + pathless.frames.length) %
+				pathless.frames.length;
+			this.#frames(frame, space);
+			this.sync(space);
+			return frame;
+		}
+
+		layout(layout) {
+			const [current, variant] = this.#state;
+			let next;
+			if (layout === undefined) {
+				if (current > 0) [layout, next] = [0, 0];
+				else if (this.#previous) [layout, next] = this.#previous;
+				else return;
+			} else {
+				const variants = this.layouts[layout].variants;
+				next = current === layout ? (variant + 1) % variants.length : 0;
+			}
+			this.#view(layout, next);
+			this.sync();
+			return [layout, next];
+		}
+
+		focus(direction = 1) {
+			const visible = this.visible;
+			const current = this.space;
+			if (visible.length < 2) return current;
+			const next =
+				visible[
+					(visible.indexOf(current) + direction + visible.length) %
+						visible.length
+				];
+			this.#focus(next);
+			this.sync();
+			return next;
 		}
 	}
 </script>

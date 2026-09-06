@@ -1,0 +1,99 @@
+<script>
+	class Pointer {
+		#active = new Map();
+		#mode;
+		#press;
+		#scale;
+		#scaleMove;
+		#complete;
+
+		constructor(universe) {
+			this.universe = universe;
+			for (const type of [
+				'pointerdown',
+				'pointermove',
+				'pointerup',
+				'pointercancel',
+			])
+				universe.el.addEventListener(type, this);
+		}
+
+		get active() {
+			return [...this.#active.values()];
+		}
+
+		press(fn) {
+			this.#press = fn;
+			return this;
+		}
+
+		scale(fn) {
+			this.#scale = fn;
+			return this;
+		}
+
+		handleEvent(event) {
+			const type = event.type.slice(7);
+			if (type === 'down') this.#start(event);
+			else if (type === 'move') this.#move(event);
+			else this.#end(event);
+		}
+
+		#start(event) {
+			if (
+				this.#mode === 'blocked' ||
+				this.#active.has(event.pointerId) ||
+				this.#active.size === 2
+			)
+				return;
+			const pointer = {
+				id: event.pointerId,
+				space: event.target.closest?.('.space'),
+				points: [this.universe.coordinate(event)],
+			};
+			this.#active.set(pointer.id, pointer);
+			this.universe.el.setPointerCapture(pointer.id);
+
+			if (this.#active.size === 1) {
+				this.#mode = 'press';
+				this.#complete = this.#press?.(pointer, event);
+				return;
+			}
+
+			this.#complete = undefined;
+			this.#mode = 'scale';
+			this.#scaleMove = this.#scale?.(this.active, event);
+		}
+
+		#move(event) {
+			if (this.#mode !== 'scale') return;
+			const pointer = this.#update(event);
+			if (!pointer) return;
+			this.#complete = this.#scaleMove?.(this.active, event);
+		}
+
+		#end(event) {
+			const pointer = this.#update(event);
+			if (!pointer) return;
+
+			try {
+				if (this.#mode !== 'blocked')
+					this.#complete?.(
+						this.#mode === 'press' ? pointer : this.active,
+						event,
+					);
+			} finally {
+				this.#active.delete(pointer.id);
+				this.#scaleMove = undefined;
+				this.#complete = undefined;
+				this.#mode = this.#active.size ? 'blocked' : undefined;
+			}
+		}
+
+		#update(event) {
+			const pointer = this.#active.get(event.pointerId);
+			if (pointer) pointer.points.push(this.universe.coordinate(event));
+			return pointer;
+		}
+	}
+</script>
