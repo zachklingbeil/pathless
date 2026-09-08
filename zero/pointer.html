@@ -2,105 +2,122 @@
 	class Pointer {
 		#active = new Map();
 		#blocked = false;
-		#discrete;
-		#continuous;
-		#continue;
-		#complete;
+		#handlers = {};
+		#separation;
 
 		constructor(universe) {
 			this.universe = universe;
-			const lifecycle = (set) => {
-				const register = (count) => (fn) => {
-					set(this.#pointers(count, fn));
-					return this;
-				};
-				return { one: register(1), two: register(2) };
+			this.threshold = 0.25;
+			const handle = (event) => {
+				const point = this.universe.coordinate(event);
+				if (event.type === 'pointerdown') this.#start(event, point);
+				else if (event.type === 'pointermove') this.#move(event, point);
+				else this.#end(event, event.type === 'pointercancel', point);
 			};
-			this.discrete = lifecycle((fn) => (this.#discrete = fn));
-			this.continuous = lifecycle((fn) => (this.#continuous = fn));
 			for (const type of [
 				'pointerdown',
 				'pointermove',
 				'pointerup',
 				'pointercancel',
 			])
-				universe.el.addEventListener(type, this);
+				universe.el.addEventListener(type, handle);
 		}
 
 		get active() {
 			return [...this.#active.values()];
 		}
 
-		#pointers(count, fn) {
-			const adapt = (handler) => (pointer, event) => {
-				if (this.#active.size !== count) return;
-				const next = handler(
-					count === 1 ? pointer : this.active,
-					event,
-				);
-				return typeof next === 'function' ? adapt(next) : next;
+		#distance([{ current: a }, { current: b }]) {
+			return { x: Math.abs(b.x - a.x), y: Math.abs(b.y - a.y) };
+		}
+
+		get tap() {
+			return this.#axes('tap');
+		}
+
+		get swipe() {
+			return this.#axes('swipe');
+		}
+
+		get scale() {
+			return this.#axes('scale');
+		}
+
+		#axes(type) {
+			return {
+				x: (negative, positive) =>
+					this.#bind(type, 'x', negative, positive),
+				y: (negative, positive) =>
+					this.#bind(type, 'y', negative, positive),
 			};
-			return adapt(fn);
 		}
 
-		handleEvent(event) {
-			const type = event.type.slice(7);
-			if (type === 'down') this.#start(event);
-			else if (type === 'move') this.#move(event);
-			else this.#end(event, type === 'cancel');
+		#bind(type, axis, negative, positive) {
+			(this.#handlers[type] ??= {})[axis] = [negative, positive];
+			return this;
 		}
 
-		#start(event) {
+		#start(event, point) {
 			if (
 				this.#blocked ||
-				this.#continue ||
 				this.#active.has(event.pointerId) ||
 				this.#active.size === 2
 			)
 				return;
 			const pointer = {
-				id: event.pointerId,
 				space: event.target.closest?.('.space'),
-				points: [this.universe.coordinate(event)],
+				start: point,
+				current: point,
 			};
-			this.#active.set(pointer.id, pointer);
-			this.universe.el.setPointerCapture(pointer.id);
-
-			this.#complete = undefined;
-			const continuation = this.#continuous?.(pointer, event);
-			if (typeof continuation === 'function')
-				this.#continue = continuation;
-			else this.#complete = this.#discrete?.(pointer, event);
+			this.#active.set(event.pointerId, pointer);
+			this.universe.el.setPointerCapture(event.pointerId);
+			if (this.#active.size === 2)
+				this.#separation = this.#distance(this.active);
 		}
 
-		#move(event) {
-			if (!this.#continue) return;
-			const pointer = this.#update(event);
+		#move(event, point) {
+			const pointer = this.#active.get(event.pointerId);
 			if (!pointer) return;
-			this.#complete = this.#continue(pointer, event);
+			pointer.current = point;
+			if (!this.#separation) return;
+
+			const pointers = this.active;
+			const current = this.#distance(pointers);
+			const delta = {
+				x: current.x - this.#separation.x,
+				y: current.y - this.#separation.y,
+			};
+			const axis = Math.abs(delta.x) >= Math.abs(delta.y) ? 'x' : 'y';
+			const steps = Math.trunc(delta[axis] / this.threshold);
+			const handler = this.#handlers.scale?.[axis]?.[steps < 0 ? 0 : 1];
+			for (let count = Math.abs(steps); count; count--)
+				handler?.(pointers, event);
+			this.#separation[axis] += steps * this.threshold;
 		}
 
-		#end(event, cancelled) {
-			const pointer = cancelled
-				? this.#active.get(event.pointerId)
-				: this.#update(event);
+		#end(event, cancelled, point) {
+			const pointer = this.#active.get(event.pointerId);
 			if (!pointer) return;
+			if (!cancelled) this.#move(event, point);
 
 			try {
-				if (!cancelled && !this.#blocked)
-					this.#complete?.(pointer, event);
+				if (!cancelled && !this.#blocked && !this.#separation) {
+					const dx = pointer.current.x - pointer.start.x;
+					const dy = pointer.current.y - pointer.start.y;
+					const tap = Math.hypot(dx, dy) < this.threshold;
+					const point = tap ? pointer.current : { x: dx, y: dy };
+					const axis =
+						Math.abs(point.x) >= Math.abs(point.y) ? 'x' : 'y';
+					const positive = (Math.sign(point[axis]) || 1) >= 0;
+					this.#handlers[tap ? 'tap' : 'swipe']?.[axis]?.[
+						positive ? 1 : 0
+					]?.(pointer, event);
+				}
 			} finally {
-				this.#active.delete(pointer.id);
-				this.#continue = undefined;
-				this.#complete = undefined;
+				this.#active.delete(event.pointerId);
+				this.#separation = undefined;
 				this.#blocked = this.#active.size > 0;
 			}
-		}
-
-		#update(event) {
-			const pointer = this.#active.get(event.pointerId);
-			if (pointer) pointer.points.push(this.universe.coordinate(event));
-			return pointer;
 		}
 	}
 </script>
