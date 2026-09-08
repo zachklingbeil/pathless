@@ -1,14 +1,23 @@
 <script>
 	class Pointer {
 		#active = new Map();
-		#mode;
-		#press;
-		#scale;
-		#scaleMove;
+		#blocked = false;
+		#discrete;
+		#continuous;
+		#continue;
 		#complete;
 
 		constructor(universe) {
 			this.universe = universe;
+			const lifecycle = (set) => {
+				const register = (count) => (fn) => {
+					set(this.#pointers(count, fn));
+					return this;
+				};
+				return { one: register(1), two: register(2) };
+			};
+			this.discrete = lifecycle((fn) => (this.#discrete = fn));
+			this.continuous = lifecycle((fn) => (this.#continuous = fn));
 			for (const type of [
 				'pointerdown',
 				'pointermove',
@@ -22,26 +31,29 @@
 			return [...this.#active.values()];
 		}
 
-		press(fn) {
-			this.#press = fn;
-			return this;
-		}
-
-		scale(fn) {
-			this.#scale = fn;
-			return this;
+		#pointers(count, fn) {
+			const adapt = (handler) => (pointer, event) => {
+				if (this.#active.size !== count) return;
+				const next = handler(
+					count === 1 ? pointer : this.active,
+					event,
+				);
+				return typeof next === 'function' ? adapt(next) : next;
+			};
+			return adapt(fn);
 		}
 
 		handleEvent(event) {
 			const type = event.type.slice(7);
 			if (type === 'down') this.#start(event);
 			else if (type === 'move') this.#move(event);
-			else this.#end(event);
+			else this.#end(event, type === 'cancel');
 		}
 
 		#start(event) {
 			if (
-				this.#mode === 'blocked' ||
+				this.#blocked ||
+				this.#continue ||
 				this.#active.has(event.pointerId) ||
 				this.#active.size === 2
 			)
@@ -54,39 +66,34 @@
 			this.#active.set(pointer.id, pointer);
 			this.universe.el.setPointerCapture(pointer.id);
 
-			if (this.#active.size === 1) {
-				this.#mode = 'press';
-				this.#complete = this.#press?.(pointer, event);
-				return;
-			}
-
 			this.#complete = undefined;
-			this.#mode = 'scale';
-			this.#scaleMove = this.#scale?.(this.active, event);
+			const continuation = this.#continuous?.(pointer, event);
+			if (typeof continuation === 'function')
+				this.#continue = continuation;
+			else this.#complete = this.#discrete?.(pointer, event);
 		}
 
 		#move(event) {
-			if (this.#mode !== 'scale') return;
+			if (!this.#continue) return;
 			const pointer = this.#update(event);
 			if (!pointer) return;
-			this.#complete = this.#scaleMove?.(this.active, event);
+			this.#complete = this.#continue(pointer, event);
 		}
 
-		#end(event) {
-			const pointer = this.#update(event);
+		#end(event, cancelled) {
+			const pointer = cancelled
+				? this.#active.get(event.pointerId)
+				: this.#update(event);
 			if (!pointer) return;
 
 			try {
-				if (this.#mode !== 'blocked')
-					this.#complete?.(
-						this.#mode === 'press' ? pointer : this.active,
-						event,
-					);
+				if (!cancelled && !this.#blocked)
+					this.#complete?.(pointer, event);
 			} finally {
 				this.#active.delete(pointer.id);
-				this.#scaleMove = undefined;
+				this.#continue = undefined;
 				this.#complete = undefined;
-				this.#mode = this.#active.size ? 'blocked' : undefined;
+				this.#blocked = this.#active.size > 0;
 			}
 		}
 
