@@ -10,9 +10,9 @@
 		constructor() {
 			this.el = document.getElementById('universe');
 			this.#plane = this.el.getBoundingClientRect();
-			new ResizeObserver(() => {
-				this.#plane = this.el.getBoundingClientRect();
-			}).observe(this.el);
+			new ResizeObserver(
+				() => (this.#plane = this.el.getBoundingClientRect()),
+			).observe(this.el);
 			this.spaces = Array.from(
 				this.el.querySelectorAll(':scope > .space'),
 				(el) => ({ el, frame: 0, states: [] }),
@@ -35,9 +35,17 @@
 			return this.space.el.querySelector(':scope > div');
 		}
 		get visible() {
-			return this.spaces.filter(
-				({ el }) => getComputedStyle(el).display !== 'none',
-			);
+			return this.spaces.filter(({ el }) => el.offsetParent !== null);
+		}
+
+		set view([layout, variant]) {
+			this.el.dataset.layout = layout;
+			this.el.dataset.variant = variant;
+			this.sync();
+		}
+
+		set focused(space) {
+			this.el.dataset.focused = this.spaces.indexOf(space);
 		}
 
 		coordinate({ clientX, clientY }) {
@@ -64,32 +72,18 @@
 			}
 		}
 
-		#frames(frame, space = this.space) {
-			space.frame = frame;
-			return frame;
-		}
-
-		#view(layout, variant = 0) {
-			const [currentLayout, currentVariant] = this.#state;
-			if (layout > 0) this.#previous = [layout, variant];
-			else if (currentLayout > 0)
-				this.#previous = [currentLayout, currentVariant];
-			this.el.dataset.layout = layout;
-			this.el.dataset.variant = variant;
-			return [layout, variant];
-		}
-
-		#focus(space) {
-			this.el.dataset.focused = this.spaces.indexOf(space);
-			return space;
+		#cycle(index, direction, length) {
+			return (index + direction + length) % length;
 		}
 
 		navigate(direction) {
 			const space = this.space;
-			const frame =
-				(space.frame + direction + pathless.frames.length) %
-				pathless.frames.length;
-			this.#frames(frame, space);
+			const frame = this.#cycle(
+				space.frame,
+				direction,
+				pathless.frames.length,
+			);
+			space.frame = frame;
 			this.sync(space);
 			return frame;
 		}
@@ -105,8 +99,9 @@
 				const variants = this.layouts[layout].variants;
 				next = current === layout ? (variant + 1) % variants.length : 0;
 			}
-			this.#view(layout, next);
-			this.sync();
+			if (layout > 0) this.#previous = [layout, next];
+			else if (current > 0) this.#previous = [current, variant];
+			this.view = [layout, next];
 			return [layout, next];
 		}
 
@@ -116,11 +111,13 @@
 			if (visible.length < 2) return current;
 			const next =
 				visible[
-					(visible.indexOf(current) + direction + visible.length) %
-						visible.length
+					this.#cycle(
+						visible.indexOf(current),
+						direction,
+						visible.length,
+					)
 				];
-			this.#focus(next);
-			this.sync();
+			this.focused = next;
 			return next;
 		}
 	}

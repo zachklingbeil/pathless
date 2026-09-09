@@ -1,52 +1,14 @@
 <script>
 	class Keyboard {
-		#global;
-		#local = new WeakMap();
-
-		constructor(universe) {
-			this.universe = universe;
-			this.#global = new Map([
-				['1', () => universe.layout()],
-				['2', () => universe.layout(1)],
-				['3', () => universe.layout(2)],
-				['tab', () => universe.focus()],
-				['q', () => universe.navigate(-1)],
-				['e', () => universe.navigate(1)],
-			]);
+		constructor(universe, emit) {
 			for (const type of ['keydown', 'keyup'])
-				window.addEventListener(type, this);
-		}
-
-		bind(key, fn) {
-			const space = this.universe.space;
-			const bindings = this.#local.get(space) ?? new Map();
-			bindings.set(key.toLowerCase(), fn);
-			this.#local.set(space, bindings);
-			return this;
-		}
-
-		clear(space = this.universe.space) {
-			this.#local.delete(space);
-		}
-
-		handleEvent({ type, key }) {
-			key = key.toLowerCase();
-			const global = this.#global.get(key);
-			if (global) {
-				if (type === 'keydown') global();
-				return;
-			}
-			this.#local.get(this.universe.space)?.get(key)?.(
-				type === 'keydown',
-			);
-		}
-
-		y(up, down) {
-			return this.bind('w', up).bind('s', down);
-		}
-
-		x(left, right) {
-			return this.bind('a', left).bind('d', right);
+				window.addEventListener(type, (event) =>
+					emit({
+						key: event.key.toLowerCase(),
+						down: type === 'keydown',
+						space: universe.space,
+					}),
+				);
 		}
 	}
 </script>

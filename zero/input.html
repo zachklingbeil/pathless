@@ -1,34 +1,152 @@
 <script>
 	class Input {
+		#bindings = new WeakMap();
+
 		constructor(universe) {
 			this.universe = universe;
-			this.keyboard = new Keyboard(universe);
-			this.pointer = new Pointer(universe);
+			this.keyboard = new Keyboard(universe, (input) =>
+				this.handle(input),
+			);
+			this.pointer = new Pointer(universe, (input) => this.handle(input));
 		}
 
-		get tap() {
-			return this.pointer.tap;
-		}
-		get swipe() {
-			return this.pointer.swipe;
-		}
-		get scale() {
-			return this.pointer.scale;
+		handle(input) {}
+
+		#bind(bindings) {
+			const space = this.universe.space;
+			const current = this.#bindings.get(space) ?? {};
+			Object.assign(current, bindings);
+			this.#bindings.set(space, current);
+			return this;
 		}
 
-		bind(key, fn) {
-			return this.keyboard.bind(key, fn);
-		}
 		x(left, right) {
-			return this.keyboard.x(left, right);
-		}
-		y(up, down) {
-			return this.keyboard.y(up, down);
+			return this.#bind({ left, right });
 		}
 
-		// Only keyboard bindings are per-space; pointer gestures are instance-global.
-		clear(space) {
-			this.keyboard.clear(space);
+		y(up, down) {
+			return this.#bind({ up, down });
+		}
+
+		backward(fn) {
+			return this.#bind({ backward: fn });
+		}
+
+		forward(fn) {
+			return this.#bind({ forward: fn });
+		}
+
+		clear(space = this.universe.space) {
+			this.#bindings.delete(space);
+		}
+	}
+
+	class Keyboard {
+		constructor(universe, emit) {
+			for (const type of ['keydown', 'keyup'])
+				window.addEventListener(type, (event) =>
+					emit({
+						key: event.key.toLowerCase(),
+						down: type === 'keydown',
+						space: universe.space,
+					}),
+				);
+		}
+	}
+
+	class Pointer {
+		#active = new Map();
+		#baseline;
+
+		constructor(universe, emit) {
+			this.emit = emit;
+			this.threshold = 0.25;
+			const handle = (event) => {
+				const type = event.type.slice(7);
+				const point =
+					type === 'cancel' ? undefined : universe.coordinate(event);
+				if (type === 'down') this.#start(event, point);
+				else if (type === 'move') this.#move(event, point);
+				else this.#end(event, point);
+			};
+			for (const type of [
+				'pointerdown',
+				'pointermove',
+				'pointerup',
+				'pointercancel',
+			])
+				universe.el.addEventListener(type, handle);
+		}
+
+		#delta(from, to) {
+			return { x: to.x - from.x, y: to.y - from.y };
+		}
+
+		#gap() {
+			const [first, second] = this.#active.values();
+			return {
+				x: Math.abs(second.current.x - first.current.x),
+				y: Math.abs(second.current.y - first.current.y),
+			};
+		}
+
+		#direction({ x, y }) {
+			if (Math.abs(x) >= Math.abs(y)) return x < 0 ? 'left' : 'right';
+			return y < 0 ? 'down' : 'up';
+		}
+
+		#start(event, point) {
+			if (this.#active.has(event.pointerId) || this.#active.size === 2)
+				return;
+			this.#active.set(event.pointerId, {
+				space: event.target.closest?.('.space'),
+				start: point,
+				current: point,
+			});
+			event.currentTarget.setPointerCapture(event.pointerId);
+			if (this.#active.size === 2) this.#baseline = this.#gap();
+		}
+
+		#move(event, point) {
+			const pointer = this.#active.get(event.pointerId);
+			if (!pointer) return;
+			pointer.current = point;
+			if (this.#active.size < 2) return;
+
+			const current = this.#gap();
+			const change = this.#delta(this.#baseline, current);
+			const direction = this.#direction(change);
+			const axis = Math.abs(change.x) >= Math.abs(change.y) ? 'x' : 'y';
+			const steps = Math.trunc(change[axis] / this.threshold);
+			const space = this.#active.values().next().value.space;
+			for (let count = Math.abs(steps); count; count--)
+				this.emit({ event: `scale.${direction}`, space });
+			this.#baseline[axis] += steps * this.threshold;
+		}
+
+		#end(event, point) {
+			const pointer = this.#active.get(event.pointerId);
+			if (!pointer) return;
+			if (point) this.#move(event, point);
+
+			if (this.#active.size === 2) {
+				this.#active.clear();
+				this.#baseline = undefined;
+				return;
+			}
+
+			if (point) {
+				const movement = this.#delta(pointer.start, pointer.current);
+				const tap = Math.hypot(movement.x, movement.y) < this.threshold;
+				const direction = this.#direction(
+					tap ? pointer.current : movement,
+				);
+				this.emit({
+					event: `${tap ? 'tap' : 'swipe'}.${direction}`,
+					space: pointer.space,
+				});
+			}
+			this.#active.delete(event.pointerId);
 		}
 	}
 </script>
